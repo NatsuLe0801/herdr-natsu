@@ -1,0 +1,10 @@
+{
+  "layout:natsu": {
+    "alt-down": "natsu-folders.next",
+    "alt-up": "natsu-folders.prev",
+    "ctrl-shift-pagedown": "natsu-folders.next",
+    "ctrl-shift-pageup": "natsu-folders.prev",
+    "ctrl-space shift-n": "natsu-folders.next",
+    "ctrl-space shift-p": "natsu-folders.prev"
+  }
+}
