@@ -65,7 +65,7 @@
               },
               "min": 90,
               "content": {
-                "mod": "agents"
+                "mod": "natsu-agents"
               }
             }
           ]
@@ -178,7 +178,7 @@
             "px": 28
           },
           "content": {
-            "mod": "workspace-status"
+            "mod": "natsu-status"
           }
         }
       ]

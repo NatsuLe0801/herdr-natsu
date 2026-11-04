@@ -1,5 +1,5 @@
 {
-  "layout:natsu": {
+  "layout:Natsu": {
     "alt-down": "natsu-folders.next",
     "alt-up": "natsu-folders.prev",
     "ctrl-shift-pagedown": "natsu-folders.next",
