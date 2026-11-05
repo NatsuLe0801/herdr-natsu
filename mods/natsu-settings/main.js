@@ -3,7 +3,6 @@ import { h_flex, v_flex } from "gpui-base";
 import { theme, exec, home, window as appWindow } from "herdr";
 import * as fs from "fs/promises";
 
-const MCP_NAME = "natsu-hc";
 const REPO_REL = "mods/herdr-natsu/mcp";
 const MCP_DIR = `${home()}/.config/herdr-app/${REPO_REL}`;
 // On Windows, npm ships only as npm.cmd/npm (no npm.exe); herdr's exec()
@@ -15,18 +14,45 @@ function npmBin() {
 
 const CHECK_TIMEOUT_MS = 3500;
 
+// Every section this settings page manages: a prereq checklist, an optional
+// deps-install step, and a `claude mcp add`/`remove` pair. Tasks after this
+// one add more entries here — pure data, no engine changes.
+const SECTIONS = [
+  {
+    id: "mcp",
+    label: "MCP",
+    icon: "server",
+    title: "MCP server",
+    subtitle: "natsu-hc — full access to hc across every paired machine",
+    serverName: "natsu-hc",
+    checks: [
+      { key: "node", label: "Node.js on PATH", bin: "node", args: ["--version"] },
+      { key: "hc", label: "hc on PATH", bin: "hc", args: ["--version"] },
+      { key: "claude", label: "Claude Code CLI on PATH", bin: "claude", args: ["--version"] },
+    ],
+    // fs.stat isn't implemented by this runtime's fs/promises shim (only
+    // readFile/writeFile are) — probe a file installed deps always ship,
+    // rather than stat-ing the node_modules directory itself.
+    // fs reads are rooted at the OS home dir (per AGENTS.md), not ~/.config/herdr-app.
+    depsCheck: { label: "Server dependencies installed", path: `.config/herdr-app/${REPO_REL}/node_modules/zod/package.json` },
+    prepCmd: { bin: npmBin(), args: ["install"], opts: { cwd: MCP_DIR } },
+    skipPrepWhenDepsReady: true,
+    mcpAddArgs: ["--", "node", `${MCP_DIR}/server.js`],
+  },
+];
+
 function safeExec(cmd, args, opts) {
   return exec(cmd, args, opts).catch((err) => ({ code: null, stdout: "", stderr: String(err?.message ?? err) }));
 }
 
 // `claude mcp list` spawns and health-checks every registered server
-// (including any that are currently broken) just to answer "is natsu-hc
+// (including any that are currently broken) just to answer "is this server
 // here" — slow and exactly the kind of call that can stall for a long time.
 // The registration itself is a plain JSON file; read that instead.
-async function isRegistered() {
+async function isRegistered(serverName) {
   try {
     const raw = await fs.readFile(".claude.json", "utf8");
-    return Boolean(JSON.parse(raw)?.mcpServers?.[MCP_NAME]);
+    return Boolean(JSON.parse(raw)?.mcpServers?.[serverName]);
   } catch {
     return false;
   }
@@ -53,75 +79,72 @@ function withTimeout(promise, ms, cx) {
 export default class NatsuSettings extends View {
   init(_props, cx) {
     this.active = "mcp";
-    this.busy = false;
-    this.lastError = null;
-    this.status = { node: null, claude: null, registered: null, depsReady: null };
-    this.refresh(cx);
+    this.busy = {};
+    this.lastError = {};
+    this.status = {};
+    for (const s of SECTIONS) this.refresh(cx, s.id);
   }
 
   // Sync on purpose: the async work runs inside cx.spawn's own cx, never
   // the cx passed in from a click/init, which goes stale across an await.
-  refresh(cx) {
+  refresh(cx, sectionId) {
+    const section = SECTIONS.find((s) => s.id === sectionId);
     cx.spawn(async (cx) => {
       const step = async (label, fn) => {
-        try { return await fn(); } catch (err) { this.lastError = `${label}: ${err?.message ?? err}`; return null; }
+        try { return await fn(); } catch (err) { this.lastError[sectionId] = `${label}: ${err?.message ?? err}`; return null; }
       };
-      const node = await step("node", () => withTimeout(safeExec("node", ["--version"]), CHECK_TIMEOUT_MS, cx));
-      const hc = await step("hc", () => withTimeout(safeExec("hc", ["--version"]), CHECK_TIMEOUT_MS, cx));
-      const claudeVersion = await step("claude", () => withTimeout(safeExec("claude", ["--version"]), CHECK_TIMEOUT_MS, cx));
-      const registered = await step("registered", () => isRegistered());
-      // fs.stat isn't implemented by this runtime's fs/promises shim (only
-      // readFile/writeFile are) — probe a file installed deps always ship,
-      // rather than stat-ing the node_modules directory itself.
-      // fs reads are rooted at the OS home dir (per AGENTS.md), not ~/.config/herdr-app.
-      const depsReady = await step("depsReady", () =>
-        fs.readFile(`.config/herdr-app/${REPO_REL}/node_modules/zod/package.json`, "utf8").then(() => true).catch(() => false));
-      this.status = {
-        node: node?.code === 0,
-        hc: hc?.code === 0,
-        claude: claudeVersion?.code === 0,
-        registered: Boolean(registered),
-        depsReady: Boolean(depsReady),
-      };
+      const checkEntries = section.checks.map(async (c) => {
+        const result = await step(c.key, () => withTimeout(safeExec(c.bin, c.args), CHECK_TIMEOUT_MS, cx));
+        return [c.key, result?.code === 0];
+      });
+      const registeredEntry = step("registered", () => isRegistered(section.serverName)).then((r) => ["registered", Boolean(r)]);
+      const depsEntry = section.depsCheck
+        ? step("depsReady", () => fs.readFile(section.depsCheck.path, "utf8").then(() => true).catch(() => false)).then((r) => ["depsReady", Boolean(r)])
+        : Promise.resolve(["depsReady", true]);
+      const entries = await Promise.all([...checkEntries, registeredEntry, depsEntry]);
+      this.status[sectionId] = Object.fromEntries(entries);
       cx.notify();
     });
   }
 
-  install(cx) {
-    if (this.busy) return;
-    this.busy = true;
-    this.lastError = null;
+  install(cx, sectionId) {
+    const section = SECTIONS.find((s) => s.id === sectionId);
+    if (this.busy[sectionId]) return;
+    this.busy[sectionId] = true;
+    this.lastError[sectionId] = null;
     cx.notify();
     cx.spawn(async (cx) => {
-      if (!this.status.depsReady) {
-        const npm = await safeExec(npmBin(), ["install"], { cwd: MCP_DIR });
-        if (npm.code !== 0) {
-          this.lastError = npm.stderr || "npm install failed";
-          this.busy = false;
+      const needsPrep = section.prepCmd && (!section.skipPrepWhenDepsReady || !this.status[sectionId]?.depsReady);
+      if (needsPrep) {
+        const prep = await safeExec(section.prepCmd.bin, section.prepCmd.args, section.prepCmd.opts);
+        if (prep.code !== 0) {
+          this.lastError[sectionId] = prep.stderr || "install step failed";
+          this.busy[sectionId] = false;
           cx.notify();
           return;
         }
       }
-      const add = await safeExec("claude", ["mcp", "add", "-s", "user", MCP_NAME, "--", "node", `${MCP_DIR}/server.js`]);
+      const add = await safeExec("claude", ["mcp", "add", "-s", "user", section.serverName, ...section.mcpAddArgs]);
       // Already registered is the goal state, not a failure (the status
       // check above can lag behind the real claude config).
-      if (add.code !== 0 && !/already exists/i.test(add.stderr)) this.lastError = add.stderr || "claude mcp add failed";
-      this.refresh(cx);
-      this.busy = false;
+      if (add.code !== 0 && !/already exists/i.test(add.stderr)) this.lastError[sectionId] = add.stderr || "claude mcp add failed";
+      this.refresh(cx, sectionId);
+      this.busy[sectionId] = false;
       cx.notify();
     });
   }
 
-  remove(cx) {
-    if (this.busy) return;
-    this.busy = true;
-    this.lastError = null;
+  remove(cx, sectionId) {
+    const section = SECTIONS.find((s) => s.id === sectionId);
+    if (this.busy[sectionId]) return;
+    this.busy[sectionId] = true;
+    this.lastError[sectionId] = null;
     cx.notify();
     cx.spawn(async (cx) => {
-      const rm = await safeExec("claude", ["mcp", "remove", "-s", "user", MCP_NAME]);
-      if (rm.code !== 0) this.lastError = rm.stderr || "claude mcp remove failed";
-      this.refresh(cx);
-      this.busy = false;
+      const rm = await safeExec("claude", ["mcp", "remove", "-s", "user", section.serverName]);
+      if (rm.code !== 0) this.lastError[sectionId] = rm.stderr || "claude mcp remove failed";
+      this.refresh(cx, sectionId);
+      this.busy[sectionId] = false;
       cx.notify();
     });
   }
@@ -146,8 +169,8 @@ export default class NatsuSettings extends View {
 
   // The prereq checklist below is diagnostic detail; this is the one thing
   // that answers "is it on": a dot + word, not buried as a sixth checklist row.
-  statusPill(t) {
-    const on = this.status.registered;
+  statusPill(t, sectionId) {
+    const on = this.status[sectionId]?.registered;
     // null (not checked yet) must read as "checking", not "off" — collapsing
     // it into the red state makes a still-loading screen look broken.
     const color = on == null ? t.dim : on ? (t.done ?? t.accent) : t.blocked;
@@ -157,31 +180,36 @@ export default class NatsuSettings extends View {
       .child(div().text_size(12).font_semibold().text_color(color).child(label));
   }
 
-  mcpSection(t) {
+  sectionBody(t, section) {
+    const status = this.status[section.id] ?? {};
+    const lastError = this.lastError[section.id];
+    const busy = this.busy[section.id];
+    // The script path node runs is the last argv entry in mcpAddArgs
+    // (`claude mcp add ... -- node <path>`) — display that directly instead
+    // of carrying a duplicate path field in SECTIONS.
+    const serverPath = section.mcpAddArgs[section.mcpAddArgs.length - 1];
     return v_flex().gap(18)
       .child(h_flex().gap(10).items_center()
         .child(div().size(32).rounded(8).flex_none().flex().items_center().justify_center().bg(t.chrome)
-          .child(svg("mods/workspace-chrome/server.svg").size(16).text_color(t.accent)))
+          .child(svg(`mods/workspace-chrome/${section.icon}.svg`).size(16).text_color(t.accent)))
         .child(v_flex().flex_1().gap(2)
-          .child(div().font_semibold().text_size(16).text_color(t.foreground).child("MCP server"))
-          .child(div().text_size(12).text_color(t.dim).child("natsu-hc — full access to hc across every paired machine")))
-        .child(this.statusPill(t)))
+          .child(div().font_semibold().text_size(16).text_color(t.foreground).child(section.title))
+          .child(div().text_size(12).text_color(t.dim).child(section.subtitle)))
+        .child(this.statusPill(t, section.id)))
       .child(v_flex().gap(11).p(16).rounded(10).bg(t.chrome).border(1).border_color(t.border)
-        .child(this.statusRow(t, "Node.js on PATH", this.status.node))
-        .child(this.statusRow(t, "hc on PATH", this.status.hc))
-        .child(this.statusRow(t, "Claude Code CLI on PATH", this.status.claude))
-        .child(this.statusRow(t, "Server dependencies installed", this.status.depsReady)))
+        .children(section.checks.map((c) => this.statusRow(t, c.label, status[c.key])))
+        .when(Boolean(section.depsCheck), (el) => el.child(this.statusRow(t, section.depsCheck.label, status.depsReady))))
       .child(v_flex().gap(4)
         .child(div().text_size(11).text_color(t.dim).child("Server path"))
         .child(div().px(10).py(7).rounded(7).bg(t.background).border(1).border_color(t.border)
-          .text_size(11.5).text_color(t.dim).child(`${MCP_DIR}/server.js`)))
-      .when(Boolean(this.lastError), (el) => el.child(h_flex().gap(8).items_center().p(10).rounded(8)
+          .text_size(11.5).text_color(t.dim).child(serverPath)))
+      .when(Boolean(lastError), (el) => el.child(h_flex().gap(8).items_center().p(10).rounded(8)
         .bg(t.chrome).border(1).border_color(t.blocked)
         .child(svg("mods/workspace-chrome/x.svg").size(13).flex_none().text_color(t.blocked))
-        .child(div().text_color(t.blocked).text_size(12).child(this.lastError))))
+        .child(div().text_color(t.blocked).text_size(12).child(lastError))))
       .child(h_flex().gap(8)
-        .when(!this.status.registered, (el) => el.child(this.button(t, "Install", "plus", this.busy, (cx) => this.install(cx))))
-        .when(Boolean(this.status.registered), (el) => el.child(this.button(t, "Remove", "minus", this.busy, (cx) => this.remove(cx)))));
+        .when(!status.registered, (el) => el.child(this.button(t, "Install", "plus", busy, (cx) => this.install(cx, section.id))))
+        .when(Boolean(status.registered), (el) => el.child(this.button(t, "Remove", "minus", busy, (cx) => this.remove(cx, section.id)))));
   }
 
   // A single-column version of this page was tried before (see git history)
@@ -189,14 +217,14 @@ export default class NatsuSettings extends View {
   // "settings page" frame even with one section today.
   render(cx) {
     const t = theme();
-    const sections = [{ id: "mcp", label: "MCP", icon: "server" }];
     const nav = v_flex().id("settings-nav").w(150).h_full().flex_none().bg(t.chrome).border_r(1).border_color(t.border).p(8).gap(2)
-      .children(sections.map((s) => h_flex().id(`settings-nav-${s.id}`).gap(8).px(10).h(32).rounded(6).items_center()
+      .children(SECTIONS.map((s) => h_flex().id(`settings-nav-${s.id}`).gap(8).px(10).h(32).rounded(6).items_center()
         .bg(this.active === s.id ? t.selected : "transparent").text_color(this.active === s.id ? t.foreground : t.muted)
         .text_size(13).cursor_pointer().hover((el) => el.bg(t.hover)).on_click((_e, cx) => { this.active = s.id; cx.notify(); })
         .child(svg(`mods/workspace-chrome/${s.icon}.svg`).size(14).flex_none())
         .child(s.label)));
-    const content = v_flex().id("settings-content").flex_1().min_w(0).h_full().overflow_y_scrollbar().p(20).child(this.mcpSection(t));
+    const activeSection = SECTIONS.find((s) => s.id === this.active);
+    const content = v_flex().id("settings-content").flex_1().min_w(0).h_full().overflow_y_scrollbar().p(20).child(this.sectionBody(t, activeSection));
     return h_flex().id("settings-root").size_full().min_h(0).items_start().bg(t.background)
       .child(nav)
       .child(content);
