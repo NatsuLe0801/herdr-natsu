@@ -98,7 +98,7 @@
           },
           "window_drag": true,
           "content": {
-            "mod": "tabs"
+            "mod": "natsu-tabs"
           }
         },
         {
@@ -163,6 +163,13 @@
                       "type": "block",
                       "content": {
                         "mod": "changes"
+                      }
+                    },
+                    {
+                      "id": "settings",
+                      "type": "block",
+                      "content": {
+                        "mod": "natsu-settings"
                       }
                     }
                   ]

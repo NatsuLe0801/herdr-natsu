@@ -13,7 +13,6 @@ function safeExec(cmd, args, opts) {
 
 export default class NatsuSettings extends View {
   init(_props, cx) {
-    this.active = "mcp";
     this.busy = false;
     this.lastError = null;
     this.status = { node: null, claude: null, registered: null, depsReady: null };
@@ -95,12 +94,6 @@ export default class NatsuSettings extends View {
 
   render(cx) {
     const t = theme();
-    const sections = [{ id: "mcp", label: "MCP" }];
-    const left = v_flex().flex_basis(0).flex_grow(2).min_w(120).bg(t.chrome).border_r(1).border_color(t.border).p(8).gap(2)
-      .children(sections.map((s) => div().id(`settings-${s.id}`).px(8).h(28).rounded(6).items_center()
-        .bg(this.active === s.id ? t.selected : "transparent").text_color(t.foreground)
-        .cursor_pointer().hover((el) => el.bg(t.hover)).on_click((_e, cx) => { this.active = s.id; cx.notify(); }).child(s.label)));
-    const right = v_flex().flex_basis(0).flex_grow(8).p(16).gap(10).child(this.mcpSection(t));
-    return h_flex().size_full().bg(t.background).child(left).child(right);
+    return v_flex().size_full().bg(t.background).p(16).gap(10).child(this.mcpSection(t));
   }
 }
