@@ -52,6 +52,7 @@ function withTimeout(promise, ms, cx) {
 
 export default class NatsuSettings extends View {
   init(_props, cx) {
+    this.active = "mcp";
     this.busy = false;
     this.lastError = null;
     this.status = { node: null, claude: null, registered: null, depsReady: null };
@@ -183,14 +184,21 @@ export default class NatsuSettings extends View {
         .when(Boolean(this.status.registered), (el) => el.child(this.button(t, "Remove", "minus", this.busy, (cx) => this.remove(cx)))));
   }
 
-  // One section today (MCP). A second section is what would earn a nav
-  // sidebar back — a sidebar for a single destination is dead space, not
-  // navigation.
+  // A single-column version of this page was tried before (see git history)
+  // and reported as looking unfinished; the nav rail is what gives it a
+  // "settings page" frame even with one section today.
   render(cx) {
     const t = theme();
-    const content = v_flex().id("settings-content").flex_1().min_w(0).h_full().overflow_y_scrollbar().p(28)
-      .child(div().w(560).child(this.mcpSection(t)));
+    const sections = [{ id: "mcp", label: "MCP", icon: "server" }];
+    const nav = v_flex().id("settings-nav").w(150).h_full().flex_none().bg(t.chrome).border_r(1).border_color(t.border).p(8).gap(2)
+      .children(sections.map((s) => h_flex().id(`settings-nav-${s.id}`).gap(8).px(10).h(32).rounded(6).items_center()
+        .bg(this.active === s.id ? t.selected : "transparent").text_color(this.active === s.id ? t.foreground : t.muted)
+        .text_size(13).cursor_pointer().hover((el) => el.bg(t.hover)).on_click((_e, cx) => { this.active = s.id; cx.notify(); })
+        .child(svg(`mods/workspace-chrome/${s.icon}.svg`).size(14).flex_none())
+        .child(s.label)));
+    const content = v_flex().id("settings-content").flex_1().min_w(0).h_full().overflow_y_scrollbar().p(20).child(this.mcpSection(t));
     return h_flex().id("settings-root").size_full().min_h(0).items_start().bg(t.background)
+      .child(nav)
       .child(content);
   }
 }
