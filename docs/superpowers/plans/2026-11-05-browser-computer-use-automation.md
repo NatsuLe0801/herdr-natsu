@@ -375,7 +375,11 @@ const BROWSER_DIR = `${home()}/.config/herdr-app/${BROWSER_REPO_REL}`;
   title: "Browser automation",
   subtitle: "natsu-browser — agent-browser's core commands as MCP tools",
   serverName: "natsu-browser",
-  checks: [{ key: "agentBrowser", label: "agent-browser on PATH", bin: "agent-browser", args: ["--version"] }],
+  // Same PATHEXT gap as npmBin() above: herdr's exec() spawns directly, no
+  // .cmd/.exe resolution, and agent-browser ships as an npm .cmd shim on
+  // Windows (confirmed via `where agent-browser`) — a bare "agent-browser"
+  // ENOENTs here even though it's genuinely on PATH.
+  checks: [{ key: "agentBrowser", label: "agent-browser on PATH", bin: appWindow()?.platform === "windows" ? "agent-browser.cmd" : "agent-browser", args: ["--version"] }],
   depsCheck: { label: "Server dependencies installed", path: `.config/herdr-app/${BROWSER_REPO_REL}/node_modules/zod/package.json` },
   prepCmd: { bin: npmBin(), args: ["install"], opts: { cwd: BROWSER_DIR } },
   skipPrepWhenDepsReady: true,
@@ -468,10 +472,14 @@ Append `mods/natsu-browser-view/live.png` to the repo root `.gitignore` (it's a 
 ```js
 import { View, div, image } from "gpui-kit";
 import { v_flex } from "gpui-base";
-import { exec, home, theme } from "herdr";
+import { exec, home, theme, window as appWindow } from "herdr";
 
 const POLL_MS = 2500;
 const SHOT_REL = "mods/natsu-browser-view/live.png"; // no subfolder: fs/promises here only confirms readFile/writeFile work (Global Constraints), not mkdir — write directly where the mod's own files already live, no new directory needed
+// Same PATHEXT gap as natsu-settings' npmBin()/the Browser section's check:
+// herdr's exec() spawns directly, and agent-browser ships as an npm .cmd
+// shim on Windows — a bare "agent-browser" ENOENTs even though it's on PATH.
+const AGENT_BROWSER_BIN = appWindow()?.platform === "windows" ? "agent-browser.cmd" : "agent-browser";
 
 export default class NatsuBrowserView extends View {
   init(_props, cx) {
@@ -488,7 +496,7 @@ export default class NatsuBrowserView extends View {
   refresh(cx) {
     cx.spawn(async (cx) => {
       const path = `${home()}/.config/herdr-app/${SHOT_REL}`;
-      const r = await exec("agent-browser", ["screenshot", path]).catch((err) => ({ code: null, stderr: String(err?.message ?? err) }));
+      const r = await exec(AGENT_BROWSER_BIN, ["screenshot", path]).catch((err) => ({ code: null, stderr: String(err?.message ?? err) }));
       this.hasShot = true;
       this.lastOk = r.code === 0;
       cx.notify();
