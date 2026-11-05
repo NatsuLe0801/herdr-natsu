@@ -1,3 +1,4 @@
+import { pathToFileURL } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { runHc, runHcTimed, toToolContent } from "./hc.js";
@@ -43,7 +44,7 @@ export function createServer() {
   return server;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const server = createServer();
   await server.connect(new StdioServerTransport());
 }
