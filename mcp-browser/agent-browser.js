@@ -1,23 +1,17 @@
-import { execFile } from "node:child_process";
+import spawn from "cross-spawn";
 
-const AGENT_BROWSER_BIN = process.platform === "win32" ? "agent-browser.cmd" : "agent-browser";
-
-export function runAgentBrowser(args, { bin = AGENT_BROWSER_BIN } = {}) {
+export function runAgentBrowser(args, { bin = "agent-browser" } = {}) {
   return new Promise((resolve) => {
-    const onDone = (err, stdout, stderr) => {
-      if (err && err.code === "ENOENT") {
-        resolve({ code: null, stdout: "", stderr: `${bin} not found on PATH` });
-        return;
-      }
-      resolve({ code: err ? (typeof err.code === "number" ? err.code : 1) : 0, stdout, stderr });
-    };
-    try {
-      execFile(bin, [...args, "--json"], { maxBuffer: 16 * 1024 * 1024 }, onDone);
-    } catch {
-      // Node refuses to exec .cmd/.bat files directly without a shell (throws
-      // EINVAL synchronously, before spawning anything) — retry through the shell.
-      execFile(bin, [...args, "--json"], { maxBuffer: 16 * 1024 * 1024, shell: true }, onDone);
-    }
+    let stdout = "", stderr = "";
+    const child = spawn(bin, [...args, "--json"]);
+    child.on("error", (err) => {
+      resolve({ code: null, stdout: "", stderr: err.code === "ENOENT" ? `${bin} not found on PATH` : err.message });
+    });
+    child.stdout?.on("data", (d) => (stdout += d));
+    child.stderr?.on("data", (d) => (stderr += d));
+    child.on("close", (code) => {
+      resolve({ code, stdout, stderr });
+    });
   });
 }
 
