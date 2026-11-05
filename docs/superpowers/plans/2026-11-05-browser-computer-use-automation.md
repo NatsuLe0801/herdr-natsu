@@ -251,7 +251,7 @@ this.busy = {};       // { [sectionId]: boolean }
 this.lastError = {};  // { [sectionId]: string | null }
 this.status = {};     // { [sectionId]: { [checkKey]: boolean | null, registered: boolean | null } }
 ```
-`init(_props, cx)` calls `this.refresh(cx, "mcp")` once per section in `SECTIONS` (a loop), not once with no argument.
+`init(_props, cx)` replaces its single `this.refresh(cx)` call with `for (const s of SECTIONS) this.refresh(cx, s.id);` — one call per section id, not one call for a hardcoded `"mcp"`.
 
 - [ ] **Step 2: Generalize `refresh(cx, sectionId)`**
 
