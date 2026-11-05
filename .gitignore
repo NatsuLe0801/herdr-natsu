@@ -1,5 +1,6 @@
 .superpowers/
 mcp/node_modules/
+mcp-browser/node_modules/
 mods/*/gpui-kit.d.ts
 mods/*/jsconfig.json
 herdr-shot.png
