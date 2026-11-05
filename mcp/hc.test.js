@@ -44,6 +44,14 @@ test("runHcTimed: missing binary resolves with empty lines and an error, never r
   assert.match(r.error, /not found on PATH/);
 });
 
+test("runHc: forced --json never lands after a trailing variadic argv (hc exec echo)", async () => {
+  const r = await runHc(["exec", "echo", "sentinel-value"]);
+  assert.equal(r.code, 0);
+  const parsed = JSON.parse(r.stdout);
+  const decoded = Buffer.from(parsed.stdout, "base64").toString().trim();
+  assert.equal(decoded, "sentinel-value");
+});
+
 test("runHcTimed: real hc events stops within the wait window on a quiet system", async () => {
   const started = Date.now();
   const r = await runHcTimed(["events"], 300);

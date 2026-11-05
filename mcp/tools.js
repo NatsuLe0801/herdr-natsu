@@ -177,7 +177,8 @@ export const TOOLS = [
     schema: {}, args: [],
   },
   {
-    name: "hc_machine_add", cmd: ["machine", "add"], description: "Add a machine reached over ssh (hc machine add)",
+    name: "hc_machine_add", cmd: ["machine", "add"],
+    description: "Add a machine reached over ssh (hc machine add). Warning: if the host needs a password or interactive confirmation, this call has no terminal to answer it and may hang until its own timeout.",
     schema: {
       target: z.string().optional(), via: z.string().optional(), temp: z.boolean().optional(),
       install: z.boolean().optional(), name: z.string().optional(), session: z.string().optional(),
@@ -193,7 +194,7 @@ export const TOOLS = [
   },
   {
     name: "hc_machine_login", cmd: ["machine", "login"],
-    description: "Log in again on a machine that says it needs it (hc machine login)",
+    description: "Log in again on a machine that says it needs it (hc machine login). Warning: if it prompts for a password or code, this call has no terminal to answer it and may hang until its own timeout.",
     schema: { machine: z.string() }, args: [{ field: "machine", kind: "positional" }],
   },
   {

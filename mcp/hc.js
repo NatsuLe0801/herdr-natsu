@@ -2,7 +2,7 @@ import { execFile, spawn } from "node:child_process";
 
 export function runHc(args, { stdin, bin = "hc" } = {}) {
   return new Promise((resolve) => {
-    const child = execFile(bin, [...args, "--json"], { maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
+    const child = execFile(bin, ["--json", ...args], { maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
       if (err && err.code === "ENOENT") {
         resolve({ code: null, stdout: "", stderr: `${bin} not found on PATH` });
         return;
@@ -19,7 +19,7 @@ export function runHc(args, { stdin, bin = "hc" } = {}) {
 export function runHcTimed(args, waitMs, { bin = "hc" } = {}) {
   return new Promise((resolve) => {
     let out = "", err = "";
-    const child = spawn(bin, [...args, "--json"]);
+    const child = spawn(bin, ["--json", ...args]);
     child.on("error", (e) => {
       resolve({ lines: [], error: e.code === "ENOENT" ? `${bin} not found on PATH` : e.message });
     });

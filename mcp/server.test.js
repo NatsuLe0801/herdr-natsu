@@ -39,6 +39,16 @@ test("hc_file_edit rejects mismatched old/new lengths without calling hc", async
   await client.close();
 });
 
+test("hc_exec with a real argv returns clean JSON and doesn't leak --json into the child's own args", async () => {
+  const client = await connected();
+  const result = await client.callTool({ name: "hc_exec", arguments: { argv: ["echo", "sentinel-value"] } });
+  assert.notEqual(result.isError, true);
+  const parsed = JSON.parse(result.content[0].text);
+  const decoded = Buffer.from(parsed.stdout, "base64").toString().trim();
+  assert.equal(decoded, "sentinel-value");
+  await client.close();
+});
+
 test("hc_events resolves quickly on a quiet system", async () => {
   const client = await connected();
   const started = Date.now();
