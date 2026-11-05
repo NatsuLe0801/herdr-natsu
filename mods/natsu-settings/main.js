@@ -13,6 +13,7 @@ function safeExec(cmd, args, opts) {
 
 export default class NatsuSettings extends View {
   init(_props, cx) {
+    this.active = "mcp";
     this.busy = false;
     this.lastError = null;
     this.status = { node: null, claude: null, registered: null, depsReady: null };
@@ -75,16 +76,19 @@ export default class NatsuSettings extends View {
   }
 
   mcpSection(t) {
-    const row = (label, ok) => h_flex().gap(6).items_center()
-      .child(div().size(7).rounded(4).bg(ok == null ? t.dim : ok ? (t.done ?? t.accent) : t.blocked))
+    const row = (label, ok) => h_flex().gap(8).items_center()
+      .child(div().size(7).rounded(4).flex_none().bg(ok == null ? t.dim : ok ? (t.done ?? t.accent) : t.blocked))
       .child(div().text_color(t.foreground).child(label));
-    return v_flex().gap(10)
-      .child(div().font_semibold().text_size(14).child("MCP: natsu-hc"))
-      .child(row("Node.js on PATH", this.status.node))
-      .child(row("hc on PATH", this.status.hc))
-      .child(row("Claude Code CLI on PATH", this.status.claude))
-      .child(row("Server dependencies installed", this.status.depsReady))
-      .child(row(this.status.registered ? "Registered with Claude Code" : "Not registered", this.status.registered))
+    return v_flex().gap(16)
+      .child(v_flex().gap(2)
+        .child(div().font_semibold().text_size(16).child("MCP server"))
+        .child(div().text_size(12).text_color(t.dim).child("natsu-hc — full access to hc across every paired machine")))
+      .child(v_flex().gap(9).p(14).rounded(8).bg(t.chrome).border(1).border_color(t.border)
+        .child(row("Node.js on PATH", this.status.node))
+        .child(row("hc on PATH", this.status.hc))
+        .child(row("Claude Code CLI on PATH", this.status.claude))
+        .child(row("Server dependencies installed", this.status.depsReady))
+        .child(row(this.status.registered ? "Registered with Claude Code" : "Not registered", this.status.registered)))
       .child(div().text_size(12).text_color(t.dim).child(`${MCP_DIR}/server.js`))
       .when(Boolean(this.lastError), (el) => el.child(div().text_color(t.blocked).text_size(12).child(this.lastError)))
       .child(h_flex().gap(8)
@@ -94,6 +98,14 @@ export default class NatsuSettings extends View {
 
   render(cx) {
     const t = theme();
-    return v_flex().size_full().bg(t.background).p(16).gap(10).child(this.mcpSection(t));
+    const sections = [{ id: "mcp", label: "MCP" }];
+    const nav = v_flex().id("settings-nav").w(170).h_full().flex_none().bg(t.chrome).border_r(1).border_color(t.border).p(10).gap(2)
+      .children(sections.map((s) => div().id(`settings-nav-${s.id}`).px(10).h(32).rounded(6).flex().items_center()
+        .bg(this.active === s.id ? t.selected : "transparent").text_color(this.active === s.id ? t.foreground : t.muted)
+        .cursor_pointer().hover((el) => el.bg(t.hover)).on_click((_e, cx) => { this.active = s.id; cx.notify(); }).child(s.label)));
+    const content = v_flex().id("settings-content").flex_1().min_w(0).h_full().overflow_y_scrollbar().p(20).child(this.mcpSection(t));
+    return h_flex().id("settings-root").size_full().min_h(0).items_start().bg(t.background)
+      .child(nav)
+      .child(content);
   }
 }
