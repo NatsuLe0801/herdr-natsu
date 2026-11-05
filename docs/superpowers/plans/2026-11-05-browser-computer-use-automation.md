@@ -239,6 +239,7 @@ git commit -m "Add mcp-browser tool table and MCP server"
     prepCmd: { bin: string, args: string[], opts?: object } | null, // run before `claude mcp add`; null = nothing to run
     skipPrepWhenDepsReady: boolean, // true: skip prepCmd if depsCheck's probe already passed (mcp/browser); false: always run it (computer-use's installer is self-idempotent)
     mcpAddArgs: string[],    // argv after `claude mcp add -s user <serverName>`, e.g. ["--", "node", `${MCP_DIR}/server.js`]
+    pathLabel: string,       // shown in the "Server path" box; NOT derived from mcpAddArgs — its last element isn't always a path (computer-use's is the literal subcommand "mcp"), so this is its own explicit field
   }
   ```
   `SECTIONS` is a **module-level, pure-data** constant (no functions, so no `this`-closure question) — every section, including `mcp`, is expressed entirely in this shape; the class's `install(cx, sectionId)` method (Step 3) is the one place that interprets `prepCmd`/`skipPrepWhenDepsReady` and owns all `this` mutation. This task defines that engine and rewrites the `mcp` entry (today's `natsu-hc` section, currently a one-off `npm install` call inside `install()`) into this data shape, with identical rendered output and behavior to the current file. Tasks 4 and 5 each add one more `SECTIONS` entry — pure data, no engine changes.
@@ -333,6 +334,7 @@ git commit -m "Generalize natsu-settings to a section-array model (behavior-pres
   prepCmd: { bin: "powershell", args: ["-NoProfile", "-Command", "irm https://cua.ai/driver/install.ps1 | iex"] },
   skipPrepWhenDepsReady: false, // installer is self-idempotent (upgrades/no-ops if current); always run it on Install
   mcpAddArgs: ["--transport", "stdio", "--", "cua-driver", "mcp"],
+  pathLabel: "cua-driver mcp", // not a file path (no local server.js here) — the actual registered command
 }
 ```
 Pure data — the shared `install(cx, sectionId)` engine from Task 3 Step 3 interprets `prepCmd`/`skipPrepWhenDepsReady` for every section, including this one; no section-specific code is added here.
@@ -384,6 +386,7 @@ const BROWSER_DIR = `${home()}/.config/herdr-app/${BROWSER_REPO_REL}`;
   prepCmd: { bin: npmBin(), args: ["install"], opts: { cwd: BROWSER_DIR } },
   skipPrepWhenDepsReady: true,
   mcpAddArgs: ["--", "node", `${BROWSER_DIR}/server.js`],
+  pathLabel: `${BROWSER_DIR}/server.js`,
 }
 ```
 Pure data, same shape as Task 4's entry — no section-specific code.
