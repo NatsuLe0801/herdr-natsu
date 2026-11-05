@@ -38,6 +38,7 @@ const SECTIONS = [
     prepCmd: { bin: npmBin(), args: ["install"], opts: { cwd: MCP_DIR } },
     skipPrepWhenDepsReady: true,
     mcpAddArgs: ["--", "node", `${MCP_DIR}/server.js`],
+    pathLabel: `${MCP_DIR}/server.js`,
   },
 ];
 
@@ -184,10 +185,6 @@ export default class NatsuSettings extends View {
     const status = this.status[section.id] ?? {};
     const lastError = this.lastError[section.id];
     const busy = this.busy[section.id];
-    // The script path node runs is the last argv entry in mcpAddArgs
-    // (`claude mcp add ... -- node <path>`) — display that directly instead
-    // of carrying a duplicate path field in SECTIONS.
-    const serverPath = section.mcpAddArgs[section.mcpAddArgs.length - 1];
     return v_flex().gap(18)
       .child(h_flex().gap(10).items_center()
         .child(div().size(32).rounded(8).flex_none().flex().items_center().justify_center().bg(t.chrome)
@@ -202,7 +199,7 @@ export default class NatsuSettings extends View {
       .child(v_flex().gap(4)
         .child(div().text_size(11).text_color(t.dim).child("Server path"))
         .child(div().px(10).py(7).rounded(7).bg(t.background).border(1).border_color(t.border)
-          .text_size(11.5).text_color(t.dim).child(serverPath)))
+          .text_size(11.5).text_color(t.dim).child(section.pathLabel)))
       .when(Boolean(lastError), (el) => el.child(h_flex().gap(8).items_center().p(10).rounded(8)
         .bg(t.chrome).border(1).border_color(t.blocked)
         .child(svg("mods/workspace-chrome/x.svg").size(13).flex_none().text_color(t.blocked))
