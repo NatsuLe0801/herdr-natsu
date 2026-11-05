@@ -26,53 +26,61 @@ export default class NatsuSettings extends View {
     this.refresh(cx);
   }
 
-  async refresh(cx) {
-    const node = await safeExec("node", ["--version"]);
-    const hc = await safeExec("hc", ["--version"]);
-    const claudeList = await safeExec("claude", ["mcp", "list"]);
-    // fs reads are rooted at the OS home dir (per AGENTS.md), not ~/.config/herdr-app.
-    const depsReady = await fs.stat(`.config/herdr-app/${REPO_REL}/node_modules`).then(() => true).catch(() => false);
-    this.status = {
-      node: node.code === 0,
-      hc: hc.code === 0,
-      claude: claudeList.code === 0,
-      registered: claudeList.code === 0 && claudeList.stdout.includes(MCP_NAME),
-      depsReady,
-    };
-    cx.notify();
+  // Sync on purpose: the async work runs inside cx.spawn's own cx, never
+  // the cx passed in from a click/init, which goes stale across an await.
+  refresh(cx) {
+    cx.spawn(async (cx) => {
+      const node = await safeExec("node", ["--version"]);
+      const hc = await safeExec("hc", ["--version"]);
+      const claudeList = await safeExec("claude", ["mcp", "list"]);
+      // fs reads are rooted at the OS home dir (per AGENTS.md), not ~/.config/herdr-app.
+      const depsReady = await fs.stat(`.config/herdr-app/${REPO_REL}/node_modules`).then(() => true).catch(() => false);
+      this.status = {
+        node: node.code === 0,
+        hc: hc.code === 0,
+        claude: claudeList.code === 0,
+        registered: claudeList.code === 0 && claudeList.stdout.includes(MCP_NAME),
+        depsReady,
+      };
+      cx.notify();
+    });
   }
 
-  async install(cx) {
+  install(cx) {
     if (this.busy) return;
     this.busy = true;
     this.lastError = null;
     cx.notify();
-    if (!this.status.depsReady) {
-      const npm = await safeExec(npmBin(), ["install"], { cwd: MCP_DIR });
-      if (npm.code !== 0) {
-        this.lastError = npm.stderr || "npm install failed";
-        this.busy = false;
-        cx.notify();
-        return;
+    cx.spawn(async (cx) => {
+      if (!this.status.depsReady) {
+        const npm = await safeExec(npmBin(), ["install"], { cwd: MCP_DIR });
+        if (npm.code !== 0) {
+          this.lastError = npm.stderr || "npm install failed";
+          this.busy = false;
+          cx.notify();
+          return;
+        }
       }
-    }
-    const add = await safeExec("claude", ["mcp", "add", "-s", "user", MCP_NAME, "--", "node", `${MCP_DIR}/server.js`]);
-    if (add.code !== 0) this.lastError = add.stderr || "claude mcp add failed";
-    await this.refresh(cx);
-    this.busy = false;
-    cx.notify();
+      const add = await safeExec("claude", ["mcp", "add", "-s", "user", MCP_NAME, "--", "node", `${MCP_DIR}/server.js`]);
+      if (add.code !== 0) this.lastError = add.stderr || "claude mcp add failed";
+      this.refresh(cx);
+      this.busy = false;
+      cx.notify();
+    });
   }
 
-  async remove(cx) {
+  remove(cx) {
     if (this.busy) return;
     this.busy = true;
     this.lastError = null;
     cx.notify();
-    const rm = await safeExec("claude", ["mcp", "remove", "-s", "user", MCP_NAME]);
-    if (rm.code !== 0) this.lastError = rm.stderr || "claude mcp remove failed";
-    await this.refresh(cx);
-    this.busy = false;
-    cx.notify();
+    cx.spawn(async (cx) => {
+      const rm = await safeExec("claude", ["mcp", "remove", "-s", "user", MCP_NAME]);
+      if (rm.code !== 0) this.lastError = rm.stderr || "claude mcp remove failed";
+      this.refresh(cx);
+      this.busy = false;
+      cx.notify();
+    });
   }
 
   button(t, label, busy, onClick) {
