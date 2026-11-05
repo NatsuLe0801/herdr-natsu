@@ -1,14 +1,23 @@
 import { execFile } from "node:child_process";
 
-export function runAgentBrowser(args, { bin = "agent-browser" } = {}) {
+const AGENT_BROWSER_BIN = process.platform === "win32" ? "agent-browser.cmd" : "agent-browser";
+
+export function runAgentBrowser(args, { bin = AGENT_BROWSER_BIN } = {}) {
   return new Promise((resolve) => {
-    execFile(bin, [...args, "--json"], { maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
+    const onDone = (err, stdout, stderr) => {
       if (err && err.code === "ENOENT") {
         resolve({ code: null, stdout: "", stderr: `${bin} not found on PATH` });
         return;
       }
       resolve({ code: err ? (typeof err.code === "number" ? err.code : 1) : 0, stdout, stderr });
-    });
+    };
+    try {
+      execFile(bin, [...args, "--json"], { maxBuffer: 16 * 1024 * 1024 }, onDone);
+    } catch {
+      // Node refuses to exec .cmd/.bat files directly without a shell (throws
+      // EINVAL synchronously, before spawning anything) — retry through the shell.
+      execFile(bin, [...args, "--json"], { maxBuffer: 16 * 1024 * 1024, shell: true }, onDone);
+    }
   });
 }
 
