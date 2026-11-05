@@ -1,11 +1,17 @@
 import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { theme, exec, home } from "herdr";
+import { theme, exec, home, window as appWindow } from "herdr";
 import * as fs from "fs/promises";
 
 const MCP_NAME = "natsu-hc";
 const REPO_REL = "mods/herdr-natsu/mcp";
 const MCP_DIR = `${home()}/.config/herdr-app/${REPO_REL}`;
+// On Windows, npm ships only as npm.cmd/npm (no npm.exe); herdr's exec()
+// spawns directly without PATHEXT resolution (unlike cmd.exe), so a bare
+// "npm" resolves to nothing there even though it's on PATH.
+function npmBin() {
+  return appWindow()?.platform === "windows" ? "npm.cmd" : "npm";
+}
 
 function safeExec(cmd, args, opts) {
   return exec(cmd, args, opts).catch((err) => ({ code: null, stdout: "", stderr: String(err?.message ?? err) }));
@@ -24,7 +30,8 @@ export default class NatsuSettings extends View {
     const node = await safeExec("node", ["--version"]);
     const hc = await safeExec("hc", ["--version"]);
     const claudeList = await safeExec("claude", ["mcp", "list"]);
-    const depsReady = await fs.stat(`${REPO_REL}/node_modules`).then(() => true).catch(() => false);
+    // fs reads are rooted at the OS home dir (per AGENTS.md), not ~/.config/herdr-app.
+    const depsReady = await fs.stat(`.config/herdr-app/${REPO_REL}/node_modules`).then(() => true).catch(() => false);
     this.status = {
       node: node.code === 0,
       hc: hc.code === 0,
@@ -41,7 +48,7 @@ export default class NatsuSettings extends View {
     this.lastError = null;
     cx.notify();
     if (!this.status.depsReady) {
-      const npm = await safeExec("npm", ["install"], { cwd: MCP_DIR });
+      const npm = await safeExec(npmBin(), ["install"], { cwd: MCP_DIR });
       if (npm.code !== 0) {
         this.lastError = npm.stderr || "npm install failed";
         this.busy = false;
