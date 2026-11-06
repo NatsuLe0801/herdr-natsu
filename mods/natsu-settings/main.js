@@ -228,7 +228,7 @@ export default class NatsuSettings extends View {
     const t = theme();
     const nav = v_flex().id("settings-nav").w(150).h_full().flex_none().bg(t.chrome).border_r(1).border_color(t.border).p(8).gap(2)
       .children(SECTIONS.map((s) => h_flex().id(`settings-nav-${s.id}`).gap(8).px(10).h(32).rounded(6).items_center()
-        .bg(this.active === s.id ? t.selected : "transparent").text_color(this.active === s.id ? t.foreground : t.muted)
+        .bg(this.active === s.id ? t.selected : t.chrome).text_color(this.active === s.id ? t.foreground : t.muted)
         .text_size(13).cursor_pointer().hover((el) => el.bg(t.hover)).on_click((_e, cx) => { this.active = s.id; cx.notify(); })
         .child(svg(`mods/workspace-chrome/${s.icon}.svg`).size(14).flex_none())
         .child(s.label)));
