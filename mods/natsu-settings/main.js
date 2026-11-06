@@ -40,6 +40,18 @@ const SECTIONS = [
     mcpAddArgs: ["--", "node", `${MCP_DIR}/server.js`],
     pathLabel: `${MCP_DIR}/server.js`,
   },
+  {
+    id: "computer-use", label: "Computer Use", icon: "terminal",
+    title: "Computer Use",
+    subtitle: "cua-driver — native desktop control (clicks, typing, window state) via Windows UIA",
+    serverName: "cua-driver",
+    checks: [{ key: "cuaDriver", label: "cua-driver on PATH", bin: "cua-driver", args: ["--version"] }],
+    depsCheck: null,
+    prepCmd: { bin: "powershell", args: ["-NoProfile", "-Command", "irm https://cua.ai/driver/install.ps1 | iex"] },
+    skipPrepWhenDepsReady: false, // installer is self-idempotent (upgrades/no-ops if current); always run it on Install
+    mcpAddArgs: ["--transport", "stdio", "--", "cua-driver", "mcp"],
+    pathLabel: "cua-driver mcp", // not a file path (no local server.js here) — the actual registered command
+  },
 ];
 
 function safeExec(cmd, args, opts) {
