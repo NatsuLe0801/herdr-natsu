@@ -12,6 +12,9 @@ function npmBin() {
   return appWindow()?.platform === "windows" ? "npm.cmd" : "npm";
 }
 
+const BROWSER_REPO_REL = "mods/herdr-natsu/mcp-browser";
+const BROWSER_DIR = `${home()}/.config/herdr-app/${BROWSER_REPO_REL}`;
+
 const CHECK_TIMEOUT_MS = 3500;
 
 // Every section this settings page manages: a prereq checklist, an optional
@@ -51,6 +54,22 @@ const SECTIONS = [
     skipPrepWhenDepsReady: false, // installer is self-idempotent (upgrades/no-ops if current); always run it on Install
     mcpAddArgs: ["--transport", "stdio", "--", "cua-driver", "mcp"],
     pathLabel: "cua-driver mcp", // not a file path (no local server.js here) — the actual registered command
+  },
+  {
+    id: "browser", label: "Browser", icon: "monitor",
+    title: "Browser automation",
+    subtitle: "natsu-browser — agent-browser's core commands as MCP tools",
+    serverName: "natsu-browser",
+    // Same PATHEXT gap as npmBin() above: herdr's exec() spawns directly, no
+    // .cmd/.exe resolution, and agent-browser ships as an npm .cmd shim on
+    // Windows (confirmed via `where agent-browser`) — a bare "agent-browser"
+    // ENOENTs here even though it's genuinely on PATH.
+    checks: [{ key: "agentBrowser", label: "agent-browser on PATH", bin: appWindow()?.platform === "windows" ? "agent-browser.cmd" : "agent-browser", args: ["--version"] }],
+    depsCheck: { label: "Server dependencies installed", path: `.config/herdr-app/${BROWSER_REPO_REL}/node_modules/zod/package.json` },
+    prepCmd: { bin: npmBin(), args: ["install"], opts: { cwd: BROWSER_DIR } },
+    skipPrepWhenDepsReady: true,
+    mcpAddArgs: ["--", "node", `${BROWSER_DIR}/server.js`],
+    pathLabel: `${BROWSER_DIR}/server.js`,
   },
 ];
 
