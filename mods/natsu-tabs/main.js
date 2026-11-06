@@ -80,7 +80,7 @@ export default class Tabs extends View {
     // "settings" is this fork's own panel, never gated behind workspace.panels (shared,
     // persisted elsewhere) -- always included so a space's remembered "settings" choice
     // (syncPanel below) is honored on return instead of being force-hidden.
-    const enabled = [...(shared("workspace.panels") ?? ["files", "changes"]), "settings"];
+    const enabled = [...(shared("workspace.panels") ?? ["files", "changes"]), "settings", "browser-view"];
     this.syncPanel(space, panel, body, enabled);
     const panelButton = (id, label, icon) => {
       const on = panel && !panel.hidden && body?.active === id;
@@ -100,6 +100,7 @@ export default class Tabs extends View {
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "mods/changes/changes.svg")))
       .when(enabled.includes("settings"), el => el.child(panelButton("settings", "Settings", "mods/workspace-chrome/settings.svg")))
+      .when(enabled.includes("browser-view"), el => el.child(panelButton("browser-view", "Browser", "mods/workspace-chrome/monitor.svg")))
       .when(w?.buttons, el => el.child(button("minimize", w.platform === "windows" ? svg("mods/natsu-tabs/win-min.svg").size(16) : "−", () => run("window.minimize")))
         .child(button("maximize", w.platform === "windows" ? svg(`mods/natsu-tabs/${w.maximized ? "win-restore" : "win-max"}.svg`).size(16) : "□", () => run("window.maximize")))
         .child(button("close-window", w.platform === "windows" ? svg("mods/natsu-tabs/win-close.svg").size(16) : svg("mods/pane/close.svg").size(13), () => run("window.close"))));
