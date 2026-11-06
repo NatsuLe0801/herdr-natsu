@@ -171,6 +171,13 @@
                       "content": {
                         "mod": "natsu-settings"
                       }
+                    },
+                    {
+                      "id": "browser-view",
+                      "type": "block",
+                      "content": {
+                        "mod": "natsu-browser-view"
+                      }
                     }
                   ]
                 }
