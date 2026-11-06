@@ -8,6 +8,11 @@ const MCP_DIR = `${home()}/.config/herdr-app/${REPO_REL}`;
 // On Windows, npm ships only as npm.cmd/npm (no npm.exe); herdr's exec()
 // spawns directly without PATHEXT resolution (unlike cmd.exe), so a bare
 // "npm" resolves to nothing there even though it's on PATH.
+// `appWindow()` returns null until the view's first render (confirmed live:
+// it's null at this module's top-level evaluation and in init(), only
+// populated by render() time) — SECTIONS below is built at module-eval time,
+// before that, so this must stay a function callers invoke lazily (a getter
+// property, not a plain value) rather than something called once right here.
 function npmBin() {
   return appWindow()?.platform === "windows" ? "npm.cmd" : "npm";
 }
@@ -38,7 +43,7 @@ const SECTIONS = [
     // rather than stat-ing the node_modules directory itself.
     // fs reads are rooted at the OS home dir (per AGENTS.md), not ~/.config/herdr-app.
     depsCheck: { label: "Server dependencies installed", path: `.config/herdr-app/${REPO_REL}/node_modules/zod/package.json` },
-    prepCmd: { bin: npmBin(), args: ["install"], opts: { cwd: MCP_DIR } },
+    prepCmd: { get bin() { return npmBin(); }, args: ["install"], opts: { cwd: MCP_DIR } },
     skipPrepWhenDepsReady: true,
     mcpAddArgs: ["--", "node", `${MCP_DIR}/server.js`],
     pathLabel: `${MCP_DIR}/server.js`,
@@ -64,9 +69,12 @@ const SECTIONS = [
     // .cmd/.exe resolution, and agent-browser ships as an npm .cmd shim on
     // Windows (confirmed via `where agent-browser`) — a bare "agent-browser"
     // ENOENTs here even though it's genuinely on PATH.
-    checks: [{ key: "agentBrowser", label: "agent-browser on PATH", bin: appWindow()?.platform === "windows" ? "agent-browser.cmd" : "agent-browser", args: ["--version"] }],
+    // `get bin()` (not a plain value): same module-eval-vs-first-render
+    // timing gap as npmBin() above — appWindow() is still null when this
+    // array is built, so the platform check must be deferred to read time.
+    checks: [{ key: "agentBrowser", label: "agent-browser on PATH", get bin() { return appWindow()?.platform === "windows" ? "agent-browser.cmd" : "agent-browser"; }, args: ["--version"] }],
     depsCheck: { label: "Server dependencies installed", path: `.config/herdr-app/${BROWSER_REPO_REL}/node_modules/zod/package.json` },
-    prepCmd: { bin: npmBin(), args: ["install"], opts: { cwd: BROWSER_DIR } },
+    prepCmd: { get bin() { return npmBin(); }, args: ["install"], opts: { cwd: BROWSER_DIR } },
     skipPrepWhenDepsReady: true,
     mcpAddArgs: ["--", "node", `${BROWSER_DIR}/server.js`],
     pathLabel: `${BROWSER_DIR}/server.js`,
@@ -74,7 +82,15 @@ const SECTIONS = [
 ];
 
 function safeExec(cmd, args, opts) {
-  return exec(cmd, args, opts).catch((err) => ({ code: null, stdout: "", stderr: String(err?.message ?? err) }));
+  // herdr's exec() has no shell option and spawns directly — a .cmd file
+  // (npm's own global shims, agent-browser's) can't be launched this way at
+  // all on Windows. Route those through cmd.exe explicitly. Safe to do: every
+  // caller in this file passes fixed, plan-authored args, never anything
+  // LLM/user-controlled (unlike mcp-browser/server.js, which does handle
+  // model-supplied arguments and needed cross-spawn for exactly that reason).
+  const useShim = appWindow()?.platform === "windows" && cmd.toLowerCase().endsWith(".cmd");
+  const [realCmd, realArgs] = useShim ? ["cmd.exe", ["/c", cmd, ...args]] : [cmd, args];
+  return exec(realCmd, realArgs, opts).catch((err) => ({ code: null, stdout: "", stderr: String(err?.message ?? err) }));
 }
 
 // `claude mcp list` spawns and health-checks every registered server
@@ -109,12 +125,15 @@ function withTimeout(promise, ms, cx) {
 }
 
 export default class NatsuSettings extends View {
-  init(_props, cx) {
+  init(_props, _cx) {
     this.active = "mcp";
     this.busy = {};
     this.lastError = {};
     this.status = {};
-    for (const s of SECTIONS) this.refresh(cx, s.id);
+    // Not triggered here: `appWindow()` (used by the platform-dependent `bin`
+    // getters above) is still null this early — confirmed live, it only
+    // becomes populated by the time render() first runs — so the initial
+    // checks run from render() instead, once, guarded by _refreshed below.
   }
 
   // Sync on purpose: the async work runs inside cx.spawn's own cx, never
@@ -244,6 +263,10 @@ export default class NatsuSettings extends View {
   // and reported as looking unfinished; the nav rail is what gives it a
   // "settings page" frame even with one section today.
   render(cx) {
+    if (!this._refreshed) {
+      this._refreshed = true;
+      for (const s of SECTIONS) this.refresh(cx, s.id);
+    }
     const t = theme();
     const nav = v_flex().id("settings-nav").w(150).h_full().flex_none().bg(t.chrome).border_r(1).border_color(t.border).p(8).gap(2)
       .children(SECTIONS.map((s) => h_flex().id(`settings-nav-${s.id}`).gap(8).px(10).h(32).rounded(6).items_center()
