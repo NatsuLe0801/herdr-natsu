@@ -1,31 +1,22 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { theme, exec, home, window as appWindow } from "herdr";
+import { theme, exec, home, run, window as appWindow } from "herdr";
 import * as fs from "fs/promises";
-import { sectionState } from "./state.js";
+import { installSteps, sectionState } from "./state.js";
 
 const REPO_REL = "mods/herdr-natsu/mcp";
 const MCP_DIR = `${home()}/.config/herdr-app/${REPO_REL}`;
-// On Windows, npm ships only as npm.cmd/npm (no npm.exe); herdr's exec()
-// spawns directly without PATHEXT resolution (unlike cmd.exe), so a bare
-// "npm" resolves to nothing there even though it's on PATH.
-// `appWindow()` returns null until the view's first render (confirmed live:
-// it's null at this module's top-level evaluation and in init(), only
-// populated by render() time) — SECTIONS below is built at module-eval time,
-// before that, so this must stay a function callers invoke lazily (a getter
-// property, not a plain value) rather than something called once right here.
-function npmBin() {
-  return appWindow()?.platform === "windows" ? "npm.cmd" : "npm";
-}
 
 const BROWSER_REPO_REL = "mods/herdr-natsu/mcp-browser";
 const BROWSER_DIR = `${home()}/.config/herdr-app/${BROWSER_REPO_REL}`;
+const INSTALLER = `${BROWSER_DIR}/install-worker.js`;
+const CUA_DRIVER_BIN = `${home()}/AppData/Local/Programs/Cua/cua-driver/bin/cua-driver.exe`;
 
 const CHECK_TIMEOUT_MS = 3500;
+const INSTALL_TIMEOUT_MS = 10 * 60 * 1000;
 
-// Every section this settings page manages: a prereq checklist, an optional
-// deps-install step, and a `claude mcp add`/`remove` pair. Tasks after this
-// one add more entries here — pure data, no engine changes.
+// Every section declares its readiness checks and the install steps that can
+// satisfy them. Uninstall remains a manual user operation outside this page.
 const SECTIONS = [
   {
     id: "mcp",
@@ -44,10 +35,11 @@ const SECTIONS = [
     // rather than stat-ing the node_modules directory itself.
     // fs reads are rooted at the OS home dir (per AGENTS.md), not ~/.config/herdr-app.
     depsCheck: { label: "Server dependencies installed", path: `.config/herdr-app/${REPO_REL}/node_modules/zod/package.json` },
-    prepCmd: { get bin() { return npmBin(); }, args: ["install"], opts: { cwd: MCP_DIR } },
+    installSteps: [
+      { when: "depsReady", expected: false, id: "mcp-deps" },
+      { when: "registered", expected: false, id: "register" },
+    ],
     prepRepairsChecks: false,
-    skipPrepWhenDepsReady: true,
-    mcpAddArgs: ["--", "node", `${MCP_DIR}/server.js`],
     pathLabel: `${MCP_DIR}/server.js`,
   },
   {
@@ -55,12 +47,13 @@ const SECTIONS = [
     title: "Computer Use",
     subtitle: "cua-driver — native desktop control (clicks, typing, window state) via Windows UIA",
     serverName: "cua-driver",
-    checks: [{ key: "cuaDriver", label: "cua-driver on PATH", bin: "cua-driver", args: ["--version"] }],
+    checks: [{ key: "cuaDriver", label: "cua-driver installed", get bin() { return appWindow()?.platform === "windows" ? CUA_DRIVER_BIN : "cua-driver"; }, args: ["--version"] }],
     depsCheck: null,
-    prepCmd: { bin: "powershell", args: ["-NoProfile", "-Command", "irm https://cua.ai/driver/install.ps1 | iex"] },
+    installSteps: [
+      { when: "cuaDriver", expected: false, id: "cua-driver" },
+      { when: "registered", expected: false, id: "register" },
+    ],
     prepRepairsChecks: true,
-    skipPrepWhenDepsReady: false,
-    mcpAddArgs: ["--transport", "stdio", "--", "cua-driver", "mcp"],
     pathLabel: "cua-driver mcp", // not a file path (no local server.js here) — the actual registered command
   },
   {
@@ -68,19 +61,20 @@ const SECTIONS = [
     title: "Browser automation",
     subtitle: "natsu-browser — agent-browser's core commands as MCP tools",
     serverName: "natsu-browser",
-    // Same PATHEXT gap as npmBin() above: herdr's exec() spawns directly, no
-    // .cmd/.exe resolution, and agent-browser ships as an npm .cmd shim on
-    // Windows (confirmed via `where agent-browser`) — a bare "agent-browser"
-    // ENOENTs here even though it's genuinely on PATH.
-    // `get bin()` (not a plain value): same module-eval-vs-first-render
-    // timing gap as npmBin() above — appWindow() is still null when this
-    // array is built, so the platform check must be deferred to read time.
-    checks: [{ key: "agentBrowser", label: "agent-browser on PATH", get bin() { return appWindow()?.platform === "windows" ? "agent-browser.cmd" : "agent-browser"; }, args: ["--version"] }],
+    // Herdr has no PATHEXT resolution, and appWindow() is null until render;
+    // resolve the Windows npm shim lazily when each check runs.
+    checks: [
+      { key: "agentBrowser", label: "agent-browser on PATH", get bin() { return appWindow()?.platform === "windows" ? "agent-browser.cmd" : "agent-browser"; }, args: ["--version"] },
+      { key: "browserRuntime", label: "Browser runtime installed", bin: "node", args: [`${BROWSER_DIR}/run-cli.js`, "doctor"] },
+    ],
     depsCheck: { label: "Server dependencies installed", path: `.config/herdr-app/${BROWSER_REPO_REL}/node_modules/zod/package.json` },
-    prepCmd: { get bin() { return npmBin(); }, args: ["install"], opts: { cwd: BROWSER_DIR } },
-    prepRepairsChecks: false,
-    skipPrepWhenDepsReady: true,
-    mcpAddArgs: ["--", "node", `${BROWSER_DIR}/server.js`],
+    installSteps: [
+      { when: "agentBrowser", expected: false, id: "browser-cli" },
+      { when: "browserRuntime", expected: false, id: "browser-runtime" },
+      { when: "depsReady", expected: false, id: "browser-deps" },
+      { when: "registered", expected: false, id: "register" },
+    ],
+    prepRepairsChecks: true,
     pathLabel: `${BROWSER_DIR}/server.js`,
   },
 ];
@@ -166,41 +160,31 @@ export default class NatsuSettings extends View {
     const section = SECTIONS.find((s) => s.id === sectionId);
     const state = sectionState(section, this.status[sectionId]);
     if (this.busy[sectionId] || !state.actions.some((action) => action === "install" || action === "repair")) return;
-    this.busy[sectionId] = true;
-    this.lastError[sectionId] = null;
-    cx.notify();
-    cx.spawn(async (cx) => {
-      if (state.shouldPrep) {
-        const prep = await safeExec(section.prepCmd.bin, section.prepCmd.args, section.prepCmd.opts);
-        if (prep.code !== 0) {
-          this.lastError[sectionId] = prep.stderr || "install step failed";
-          this.busy[sectionId] = false;
-          cx.notify();
-          return;
-        }
-      }
-      const add = await safeExec("claude", ["mcp", "add", "-s", "user", section.serverName, ...section.mcpAddArgs]);
-      // Already registered is the goal state, not a failure (the status
-      // check above can lag behind the real claude config).
-      if (add.code !== 0 && !/already exists/i.test(add.stderr)) this.lastError[sectionId] = add.stderr || "claude mcp add failed";
-      this.refresh(cx, sectionId);
-      this.busy[sectionId] = false;
-      cx.notify();
-    });
-  }
+    const steps = installSteps(section, this.status[sectionId]);
+    if (!steps.length) return;
 
-  remove(cx, sectionId) {
-    const section = SECTIONS.find((s) => s.id === sectionId);
-    if (this.busy[sectionId]) return;
     this.busy[sectionId] = true;
     this.lastError[sectionId] = null;
+    run("tab.new", {
+      name: `Install ${section.label}`,
+      argv: ["node", INSTALLER, section.id, ...steps.map((step) => step.id)],
+    });
     cx.notify();
-    cx.spawn(async (cx) => {
-      const rm = await safeExec("claude", ["mcp", "remove", "-s", "user", section.serverName]);
-      if (rm.code !== 0) this.lastError[sectionId] = rm.stderr || "claude mcp remove failed";
+
+    const started = Date.now();
+    const monitor = cx.timer.every(2000, (cx) => {
       this.refresh(cx, sectionId);
-      this.busy[sectionId] = false;
-      cx.notify();
+      const current = sectionState(section, this.status[sectionId]);
+      if (current.ready && this.status[sectionId]?.registered) {
+        this.busy[sectionId] = false;
+        monitor.cancel();
+        cx.notify();
+      } else if (Date.now() - started >= INSTALL_TIMEOUT_MS) {
+        this.busy[sectionId] = false;
+        this.lastError[sectionId] = "Install did not complete. Check the Install tab for details.";
+        monitor.cancel();
+        cx.notify();
+      }
     });
   }
 
@@ -261,8 +245,7 @@ export default class NatsuSettings extends View {
         .child(div().text_color(t.blocked).text_size(12).child(lastError))))
       .child(h_flex().gap(8)
         .when(state.actions.includes("install"), (el) => el.child(this.button(t, "Install", "plus", busy, (cx) => this.install(cx, section.id))))
-        .when(state.actions.includes("repair"), (el) => el.child(this.button(t, "Repair", "plus", busy, (cx) => this.install(cx, section.id))))
-        .when(state.actions.includes("remove"), (el) => el.child(this.button(t, "Remove", "minus", busy, (cx) => this.remove(cx, section.id)))));
+        .when(state.actions.includes("repair"), (el) => el.child(this.button(t, "Repair", "plus", busy, (cx) => this.install(cx, section.id)))));
   }
 
   // A single-column version of this page was tried before (see git history)

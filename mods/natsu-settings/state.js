@@ -1,3 +1,7 @@
+export function installSteps(section, status = {}) {
+  return (section.installSteps ?? []).filter((step) => !step.when || status[step.when] === step.expected);
+}
+
 export function sectionState(section, status = {}) {
   const checksReady = section.checks.every((check) => status[check.key] === true);
   const depsReady = !section.depsCheck || status.depsReady === true;
@@ -15,9 +19,9 @@ export function sectionState(section, status = {}) {
     };
   }
 
-  const canRepair = Boolean(section.prepCmd) && !ready && (checksReady || section.prepRepairsChecks);
+  const canRepair = Boolean(section.installSteps?.length) && !ready && (checksReady || section.prepRepairsChecks);
   const actions = status.registered
-    ? [...(canRepair ? ["repair"] : []), "remove"]
+    ? canRepair ? ["repair"] : []
     : ready || canRepair ? ["install"] : [];
   const pill = status.registered
     ? ready
@@ -27,6 +31,6 @@ export function sectionState(section, status = {}) {
 
   return {
     checking, checksReady, depsReady, ready, pill, actions,
-    shouldPrep: canRepair && (!section.skipPrepWhenDepsReady || !depsReady),
+    shouldPrep: installSteps(section, status).length > 0,
   };
 }
