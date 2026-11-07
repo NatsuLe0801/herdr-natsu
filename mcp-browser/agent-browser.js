@@ -1,16 +1,43 @@
-import spawn from "cross-spawn";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import crossSpawn from "cross-spawn";
 
-export function runAgentBrowser(args, { bin = "agent-browser" } = {}) {
+export function defaultAgentBrowserBin({ platform = process.platform, execPath = process.execPath, exists = existsSync } = {}) {
+  if (platform === "win32") {
+    const candidate = path.win32.join(path.win32.dirname(execPath), "node_modules", "agent-browser", "bin", "agent-browser-win32-x64.exe");
+    if (exists(candidate)) return candidate;
+  }
+  return "agent-browser";
+}
+
+export function runAgentBrowser(args, { bin = defaultAgentBrowserBin(), spawn = crossSpawn } = {}) {
   return new Promise((resolve) => {
-    let stdout = "", stderr = "";
+    let stdout = "", stderr = "", settled = false, exited = false, exitCode = null, drainTimer = null;
+    const done = (result) => {
+      if (settled) return;
+      settled = true;
+      if (drainTimer) clearTimeout(drainTimer);
+      resolve(result);
+    };
+    const drain = () => {
+      if (!exited) return;
+      if (drainTimer) clearTimeout(drainTimer);
+      drainTimer = setTimeout(() => {
+        child.stdout?.destroy();
+        child.stderr?.destroy();
+        done({ code: exitCode, stdout, stderr });
+      }, 25);
+    };
     const child = spawn(bin, [...args, "--json"]);
     child.on("error", (err) => {
-      resolve({ code: null, stdout: "", stderr: err.code === "ENOENT" ? `${bin} not found on PATH` : err.message });
+      done({ code: null, stdout: "", stderr: err.code === "ENOENT" ? `${bin} not found on PATH` : err.message });
     });
-    child.stdout?.on("data", (d) => (stdout += d));
-    child.stderr?.on("data", (d) => (stderr += d));
-    child.on("close", (code) => {
-      resolve({ code, stdout, stderr });
+    child.stdout?.on("data", (d) => { stdout += d; drain(); });
+    child.stderr?.on("data", (d) => { stderr += d; drain(); });
+    child.on("exit", (code) => {
+      exited = true;
+      exitCode = code;
+      drain();
     });
   });
 }

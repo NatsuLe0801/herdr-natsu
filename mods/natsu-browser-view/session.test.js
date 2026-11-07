@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { selectSession } from "./session.js";
+import * as session from "./session.js";
 
 test("selectSession returns null when no active session exists", () => {
   assert.equal(selectSession('{"success":true,"data":{"sessions":[]}}'), null);
@@ -21,4 +22,35 @@ test("selectSession prefers default over named sessions regardless of returned p
 test("selectSession rejects unsuccessful or malformed output", () => {
   assert.equal(selectSession('{"success":false,"data":{"sessions":["s1"]}}'), null);
   assert.equal(selectSession("not json"), null);
+});
+
+test("selectSession keeps the user's current session while it still exists", () => {
+  assert.equal(selectSession('{"success":true,"data":{"sessions":["default","agent-2"]}}', "agent-2"), "agent-2");
+});
+
+test("sessionNames returns the validated CLI session order", () => {
+  assert.equal(typeof session.sessionNames, "function");
+  assert.deepEqual(session.sessionNames('{"success":true,"data":{"sessions":["agent-2",null,"","default"]}}'), ["agent-2", "default"]);
+});
+
+test("nextSessionName fills the first available Herdr session number", () => {
+  assert.equal(typeof session.nextSessionName, "function");
+  assert.equal(session.nextSessionName(["default", "herdr-1", "agent-2", "herdr-3"]), "herdr-2");
+});
+
+test("pageValue reads successful agent-browser get JSON", () => {
+  assert.equal(typeof session.pageValue, "function");
+  assert.equal(session.pageValue('{"success":true,"data":{"url":"https://example.com/"}}', "url"), "https://example.com/");
+  assert.equal(session.pageValue('{"success":true,"data":{"title":"Example Domain"}}', "title"), "Example Domain");
+  assert.equal(session.pageValue("not json", "url"), null);
+});
+
+test("reconcileSessions discards a refresh for a tab that is no longer selected", () => {
+  assert.equal(typeof session.reconcileSessions, "function");
+  const stdout = '{"success":true,"data":{"sessions":["herdr-1","herdr-2"]}}';
+  assert.equal(session.reconcileSessions(stdout, "herdr-1", "herdr-2"), null);
+  assert.deepEqual(session.reconcileSessions(stdout, "herdr-2", "herdr-2"), {
+    sessions: ["herdr-1", "herdr-2"],
+    session: "herdr-2",
+  });
 });
