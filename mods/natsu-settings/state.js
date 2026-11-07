@@ -2,6 +2,18 @@ export function installSteps(section, status = {}) {
   return (section.installSteps ?? []).filter((step) => !step.when || status[step.when] === step.expected);
 }
 
+export function installResult(raw, token) {
+  try {
+    const result = JSON.parse(raw);
+    if (result.token !== token || !["running", "done", "error"].includes(result.state)) return null;
+    return result.state === "error"
+      ? { state: "error", error: String(result.error ?? "Install failed") }
+      : { state: result.state };
+  } catch {
+    return null;
+  }
+}
+
 export function sectionState(section, status = {}) {
   const checksReady = section.checks.every((check) => status[check.key] === true);
   const depsReady = !section.depsCheck || status.depsReady === true;

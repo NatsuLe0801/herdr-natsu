@@ -2,7 +2,7 @@ import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { theme, exec, home, run, window as appWindow } from "herdr";
 import * as fs from "fs/promises";
-import { installSteps, sectionState } from "./state.js";
+import { installResult, installSteps, sectionState } from "./state.js";
 
 const REPO_REL = "mods/herdr-natsu/mcp";
 const MCP_DIR = `${home()}/.config/herdr-app/${REPO_REL}`;
@@ -10,6 +10,7 @@ const MCP_DIR = `${home()}/.config/herdr-app/${REPO_REL}`;
 const BROWSER_REPO_REL = "mods/herdr-natsu/mcp-browser";
 const BROWSER_DIR = `${home()}/.config/herdr-app/${BROWSER_REPO_REL}`;
 const INSTALLER = `${BROWSER_DIR}/install-worker.js`;
+const INSTALL_STATUS_REL = ".config/herdr-app/.install-status";
 const CUA_DRIVER_BIN = `${home()}/AppData/Local/Programs/Cua/cua-driver/bin/cua-driver.exe`;
 
 const CHECK_TIMEOUT_MS = 3500;
@@ -163,28 +164,41 @@ export default class NatsuSettings extends View {
     const steps = installSteps(section, this.status[sectionId]);
     if (!steps.length) return;
 
+    const token = String(Date.now());
     this.busy[sectionId] = true;
     this.lastError[sectionId] = null;
     run("tab.new", {
       name: `Install ${section.label}`,
-      argv: ["node", INSTALLER, section.id, ...steps.map((step) => step.id)],
+      argv: ["node", INSTALLER, section.id, `--token=${token}`, ...steps.map((step) => step.id)],
     });
     cx.notify();
 
     const started = Date.now();
     const monitor = cx.timer.every(2000, (cx) => {
-      this.refresh(cx, sectionId);
-      const current = sectionState(section, this.status[sectionId]);
-      if (current.ready && this.status[sectionId]?.registered) {
-        this.busy[sectionId] = false;
-        monitor.cancel();
-        cx.notify();
-      } else if (Date.now() - started >= INSTALL_TIMEOUT_MS) {
-        this.busy[sectionId] = false;
-        this.lastError[sectionId] = "Install did not complete. Check the Install tab for details.";
-        monitor.cancel();
-        cx.notify();
-      }
+      cx.spawn(async (cx) => {
+        const raw = await fs.readFile(`${INSTALL_STATUS_REL}/${sectionId}.json`, "utf8").catch(() => null);
+        const result = raw ? installResult(raw, token) : null;
+        if (result?.state === "error") {
+          this.busy[sectionId] = false;
+          this.lastError[sectionId] = `${result.error}. Check the Install tab for details.`;
+          monitor.cancel();
+          cx.notify();
+          return;
+        }
+
+        this.refresh(cx, sectionId);
+        const current = sectionState(section, this.status[sectionId]);
+        if (current.ready && this.status[sectionId]?.registered) {
+          this.busy[sectionId] = false;
+          monitor.cancel();
+          cx.notify();
+        } else if (Date.now() - started >= INSTALL_TIMEOUT_MS) {
+          this.busy[sectionId] = false;
+          this.lastError[sectionId] = "Install did not complete. Check the Install tab for details.";
+          monitor.cancel();
+          cx.notify();
+        }
+      });
     });
   }
 

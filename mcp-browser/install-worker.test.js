@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const worker = fileURLToPath(new URL("./install-worker.js", import.meta.url));
@@ -21,9 +23,71 @@ test("Windows shim runner forwards argv without command-string parsing", async (
   assert.match(result.stdout.trim(), /^\d+\.\d+\.\d+$/);
 });
 
+test("Windows shim runner preserves a bare double dash", async () => {
+  if (process.platform !== "win32") return;
+  const dir = await mkdtemp(path.join(tmpdir(), "natsu-shim-"));
+  const capture = path.join(dir, "capture.js");
+  await writeFile(capture, "process.stdout.write(JSON.stringify(process.argv.slice(2)))");
+  try {
+    const result = await new Promise((resolve) => {
+      const child = spawn("powershell.exe", ["-NoProfile", "-File", shimRunner, "node", capture, "mcp", "add", "-s", "user", "x", "--", "node", "server.js"], { windowsHide: true });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (chunk) => { stdout += chunk; });
+      child.stderr.on("data", (chunk) => { stderr += chunk; });
+      child.on("close", (code) => resolve({ code, stdout, stderr }));
+    });
+    assert.equal(result.code, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), ["mcp", "add", "-s", "user", "x", "--", "node", "server.js"]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("install worker boots before local dependencies exist", async () => {
   const source = await readFile(worker, "utf8");
   assert.doesNotMatch(source, /from ["']cross-spawn["']/);
+});
+
+test("install worker writes an immediate error status", async () => {
+  const statusDir = await mkdtemp(path.join(tmpdir(), "natsu-install-status-"));
+  try {
+    const result = await new Promise((resolve) => {
+      const child = spawn(process.execPath, [worker, "browser", "--token=test-run", "not-a-step"], {
+        windowsHide: true,
+        env: { ...process.env, HERDR_INSTALL_STATUS_DIR: statusDir },
+      });
+      child.on("close", (code) => resolve({ code }));
+    });
+    assert.equal(result.code, 1);
+    const status = JSON.parse(await readFile(path.join(statusDir, "browser.json"), "utf8"));
+    assert.equal(status.token, "test-run");
+    assert.equal(status.state, "error");
+    assert.match(status.error, /Unknown browser install step/);
+  } finally {
+    await rm(statusDir, { recursive: true, force: true });
+  }
+});
+
+test("existing MCP registration is treated as success", async () => {
+  if (process.platform !== "win32") return;
+  const dir = await mkdtemp(path.join(tmpdir(), "natsu-existing-mcp-"));
+  const statusDir = path.join(dir, "status");
+  await writeFile(path.join(dir, "claude.cmd"), "@echo MCP server natsu-browser already exists in user config 1>&2\r\n@exit /b 1\r\n");
+  try {
+    const result = await new Promise((resolve) => {
+      const child = spawn(process.execPath, [worker, "browser", "--token=existing", "register"], {
+        windowsHide: true,
+        env: { ...process.env, PATH: `${dir};${process.env.PATH}`, HERDR_INSTALL_STATUS_DIR: statusDir },
+      });
+      child.on("close", (code) => resolve({ code }));
+    });
+    assert.equal(result.code, 0);
+    const status = JSON.parse(await readFile(path.join(statusDir, "browser.json"), "utf8"));
+    assert.equal(status.state, "done");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("browser install worker plans CLI, runtime, dependencies, then registration", async () => {
@@ -57,5 +121,7 @@ test("computer-use worker uses the privacy-preserving official installer", async
   const plan = JSON.parse(result.stdout);
   assert.equal(plan[0].args.at(-1).includes("CUA_DRIVER_RS_TELEMETRY_ENABLED='0'"), true);
   assert.equal(plan[0].args.at(-1).includes("-NoAutoStart"), true);
-  assert.deepEqual(plan[1].args, ["mcp", "add", "-s", "user", "cua-driver", "--transport", "stdio", "--", "cua-driver", "mcp"]);
+  assert.deepEqual(plan[1].args.slice(0, 8), ["mcp", "add", "-s", "user", "cua-driver", "--transport", "stdio", "--"]);
+  assert.equal(process.platform === "win32" ? plan[1].args.at(-2).endsWith("cua-driver.exe") : plan[1].args.at(-2) === "cua-driver", true);
+  assert.equal(plan[1].args.at(-1), "mcp");
 });

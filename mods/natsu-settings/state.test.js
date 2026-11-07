@@ -84,6 +84,16 @@ test("installSteps prepares a missing browser CLI, runtime, and local dependenci
   assert.deepEqual(steps.map((step) => step.id), ["cli", "runtime", "deps", "register"]);
 });
 
+test("installResult accepts only the current install token", () => {
+  assert.equal(typeof stateHelpers.installResult, "function");
+  assert.equal(stateHelpers.installResult('{"token":"old","state":"error","error":"old failure"}', "new"), null);
+  assert.deepEqual(stateHelpers.installResult('{"token":"new","state":"error","error":"network failed"}', "new"), {
+    state: "error",
+    error: "network failed",
+  });
+  assert.deepEqual(stateHelpers.installResult('{"token":"new","state":"done"}', "new"), { state: "done" });
+});
+
 test("installSteps skips preparation that is already healthy", () => {
   assert.deepEqual(stateHelpers.installSteps({
     installSteps: [

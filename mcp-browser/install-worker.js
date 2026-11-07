@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { mkdir, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -6,11 +8,16 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const browserDir = path.join(root, "mcp-browser");
 const mcpDir = path.join(root, "mcp");
 const shimRunner = path.join(browserDir, "run-command.ps1");
+const cuaDriverBin = process.platform === "win32"
+  ? path.join(homedir(), "AppData", "Local", "Programs", "Cua", "cua-driver", "bin", "cua-driver.exe")
+  : "cua-driver";
+const statusDir = process.env.HERDR_INSTALL_STATUS_DIR
+  ?? path.join(homedir(), ".config", "herdr-app", ".install-status");
 
 function plans() {
   const register = {
     mcp: { id: "register", cmd: "claude", args: ["mcp", "add", "-s", "user", "natsu-hc", "--", "node", path.join(mcpDir, "server.js")] },
-    "computer-use": { id: "register", cmd: "claude", args: ["mcp", "add", "-s", "user", "cua-driver", "--transport", "stdio", "--", "cua-driver", "mcp"] },
+    "computer-use": { id: "register", cmd: "claude", args: ["mcp", "add", "-s", "user", "cua-driver", "--transport", "stdio", "--", cuaDriverBin, "mcp"] },
     browser: { id: "register", cmd: "claude", args: ["mcp", "add", "-s", "user", "natsu-browser", "--", "node", path.join(browserDir, "server.js")] },
   };
   return {
@@ -47,6 +54,11 @@ export function buildInstallPlan(section, requested) {
 
 const WINDOWS_SHIMS = new Set(["npm", "agent-browser", "claude"]);
 
+async function writeStatus(section, status) {
+  await mkdir(statusDir, { recursive: true });
+  await writeFile(path.join(statusDir, `${section}.json`), JSON.stringify(status));
+}
+
 function runStep(step) {
   return new Promise((resolve, reject) => {
     console.log(`\n==> ${step.id}`);
@@ -55,26 +67,41 @@ function runStep(step) {
     const args = windowsShim
       ? ["-NoProfile", "-File", shimRunner, step.cmd, ...step.args]
       : step.args;
-    const child = spawn(command, args, { cwd: step.cwd, stdio: "inherit", windowsHide: false });
+    const capture = step.id === "register";
+    const child = spawn(command, args, { cwd: step.cwd, stdio: capture ? ["inherit", "pipe", "pipe"] : "inherit", windowsHide: false });
+    let output = "";
+    child.stdout?.on("data", (chunk) => { output += chunk; process.stdout.write(chunk); });
+    child.stderr?.on("data", (chunk) => { output += chunk; process.stderr.write(chunk); });
     child.on("error", reject);
-    child.on("close", (code) => code === 0 ? resolve() : reject(new Error(`${step.id} exited with code ${code}`)));
+    child.on("close", (code) => {
+      if (code === 0 || (capture && /already exists/i.test(output))) resolve();
+      else reject(new Error(`${step.id} exited with code ${code}`));
+    });
   });
 }
 
 const args = process.argv.slice(2);
 const dryRun = args[0] === "--dry-run";
 if (dryRun) args.shift();
-const [section, ...requested] = args;
+const section = args.shift();
+const tokenArg = args[0]?.startsWith("--token=") ? args.shift() : null;
+const token = tokenArg?.slice("--token=".length) ?? null;
 
 try {
-  const plan = buildInstallPlan(section, requested);
+  const plan = buildInstallPlan(section, args);
   if (dryRun) {
     process.stdout.write(JSON.stringify(plan));
   } else {
-    for (const step of plan) await runStep(step);
+    for (const step of plan) {
+      if (token) await writeStatus(section, { token, state: "running", step: step.id });
+      await runStep(step);
+    }
+    if (token) await writeStatus(section, { token, state: "done" });
     console.log("\nInstall complete. Return to Settings to see Activated.");
   }
 } catch (error) {
-  console.error(`\nInstall failed: ${error?.message ?? error}`);
+  const message = String(error?.message ?? error);
+  if (token && section) await writeStatus(section, { token, state: "error", error: message });
+  console.error(`\nInstall failed: ${message}`);
   process.exitCode = 1;
 }

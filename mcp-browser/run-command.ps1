@@ -1,10 +1,5 @@
-param(
-  [Parameter(Mandatory = $true, Position = 0)]
-  [string]$Command,
-
-  [Parameter(Position = 1, ValueFromRemainingArguments = $true)]
-  [string[]]$CommandArgs
-)
+$Command = $args[0]
+$CommandArgs = @($args | Select-Object -Skip 1)
 
 & $Command @CommandArgs
 exit $LASTEXITCODE
