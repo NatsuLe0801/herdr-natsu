@@ -2,6 +2,7 @@ import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { theme, exec, home, window as appWindow } from "herdr";
 import * as fs from "fs/promises";
+import { sectionState } from "./state.js";
 
 const REPO_REL = "mods/herdr-natsu/mcp";
 const MCP_DIR = `${home()}/.config/herdr-app/${REPO_REL}`;
@@ -44,6 +45,7 @@ const SECTIONS = [
     // fs reads are rooted at the OS home dir (per AGENTS.md), not ~/.config/herdr-app.
     depsCheck: { label: "Server dependencies installed", path: `.config/herdr-app/${REPO_REL}/node_modules/zod/package.json` },
     prepCmd: { get bin() { return npmBin(); }, args: ["install"], opts: { cwd: MCP_DIR } },
+    prepRepairsChecks: false,
     skipPrepWhenDepsReady: true,
     mcpAddArgs: ["--", "node", `${MCP_DIR}/server.js`],
     pathLabel: `${MCP_DIR}/server.js`,
@@ -56,7 +58,8 @@ const SECTIONS = [
     checks: [{ key: "cuaDriver", label: "cua-driver on PATH", bin: "cua-driver", args: ["--version"] }],
     depsCheck: null,
     prepCmd: { bin: "powershell", args: ["-NoProfile", "-Command", "irm https://cua.ai/driver/install.ps1 | iex"] },
-    skipPrepWhenDepsReady: false, // installer is self-idempotent (upgrades/no-ops if current); always run it on Install
+    prepRepairsChecks: true,
+    skipPrepWhenDepsReady: false,
     mcpAddArgs: ["--transport", "stdio", "--", "cua-driver", "mcp"],
     pathLabel: "cua-driver mcp", // not a file path (no local server.js here) — the actual registered command
   },
@@ -75,6 +78,7 @@ const SECTIONS = [
     checks: [{ key: "agentBrowser", label: "agent-browser on PATH", get bin() { return appWindow()?.platform === "windows" ? "agent-browser.cmd" : "agent-browser"; }, args: ["--version"] }],
     depsCheck: { label: "Server dependencies installed", path: `.config/herdr-app/${BROWSER_REPO_REL}/node_modules/zod/package.json` },
     prepCmd: { get bin() { return npmBin(); }, args: ["install"], opts: { cwd: BROWSER_DIR } },
+    prepRepairsChecks: false,
     skipPrepWhenDepsReady: true,
     mcpAddArgs: ["--", "node", `${BROWSER_DIR}/server.js`],
     pathLabel: `${BROWSER_DIR}/server.js`,
@@ -160,13 +164,13 @@ export default class NatsuSettings extends View {
 
   install(cx, sectionId) {
     const section = SECTIONS.find((s) => s.id === sectionId);
-    if (this.busy[sectionId]) return;
+    const state = sectionState(section, this.status[sectionId]);
+    if (this.busy[sectionId] || !state.actions.some((action) => action === "install" || action === "repair")) return;
     this.busy[sectionId] = true;
     this.lastError[sectionId] = null;
     cx.notify();
     cx.spawn(async (cx) => {
-      const needsPrep = section.prepCmd && (!section.skipPrepWhenDepsReady || !this.status[sectionId]?.depsReady);
-      if (needsPrep) {
+      if (state.shouldPrep) {
         const prep = await safeExec(section.prepCmd.bin, section.prepCmd.args, section.prepCmd.opts);
         if (prep.code !== 0) {
           this.lastError[sectionId] = prep.stderr || "install step failed";
@@ -219,20 +223,21 @@ export default class NatsuSettings extends View {
   }
 
   // The prereq checklist below is diagnostic detail; this is the one thing
-  // that answers "is it on": a dot + word, not buried as a sixth checklist row.
-  statusPill(t, sectionId) {
-    const on = this.status[sectionId]?.registered;
-    // null (not checked yet) must read as "checking", not "off" — collapsing
-    // it into the red state makes a still-loading screen look broken.
-    const color = on == null ? t.dim : on ? (t.done ?? t.accent) : t.blocked;
-    const label = on == null ? "Checking…" : on ? "Activated" : "Not connected";
+  // that answers whether registration and prerequisites are both usable.
+  statusPill(t, state) {
+    const color = state.pill.tone === "neutral"
+      ? t.dim
+      : state.pill.tone === "ready"
+        ? (t.done ?? t.accent)
+        : t.blocked;
     return h_flex().gap(6).items_center().px(9).py(4).rounded(6).border(1).border_color(color)
       .child(div().size(7).rounded(4).flex_none().bg(color))
-      .child(div().text_size(12).font_semibold().text_color(color).child(label));
+      .child(div().text_size(12).font_semibold().text_color(color).child(state.pill.label));
   }
 
   sectionBody(t, section) {
     const status = this.status[section.id] ?? {};
+    const state = sectionState(section, status);
     const lastError = this.lastError[section.id];
     const busy = this.busy[section.id];
     return v_flex().gap(18)
@@ -242,7 +247,7 @@ export default class NatsuSettings extends View {
         .child(v_flex().flex_1().gap(2)
           .child(div().font_semibold().text_size(16).text_color(t.foreground).child(section.title))
           .child(div().text_size(12).text_color(t.dim).child(section.subtitle)))
-        .child(this.statusPill(t, section.id)))
+        .child(this.statusPill(t, state)))
       .child(v_flex().gap(11).p(16).rounded(10).bg(t.chrome).border(1).border_color(t.border)
         .children(section.checks.map((c) => this.statusRow(t, c.label, status[c.key])))
         .when(Boolean(section.depsCheck), (el) => el.child(this.statusRow(t, section.depsCheck.label, status.depsReady))))
@@ -255,8 +260,9 @@ export default class NatsuSettings extends View {
         .child(svg("mods/workspace-chrome/x.svg").size(13).flex_none().text_color(t.blocked))
         .child(div().text_color(t.blocked).text_size(12).child(lastError))))
       .child(h_flex().gap(8)
-        .when(!status.registered, (el) => el.child(this.button(t, "Install", "plus", busy, (cx) => this.install(cx, section.id))))
-        .when(Boolean(status.registered), (el) => el.child(this.button(t, "Remove", "minus", busy, (cx) => this.remove(cx, section.id)))));
+        .when(state.actions.includes("install"), (el) => el.child(this.button(t, "Install", "plus", busy, (cx) => this.install(cx, section.id))))
+        .when(state.actions.includes("repair"), (el) => el.child(this.button(t, "Repair", "plus", busy, (cx) => this.install(cx, section.id))))
+        .when(state.actions.includes("remove"), (el) => el.child(this.button(t, "Remove", "minus", busy, (cx) => this.remove(cx, section.id)))));
   }
 
   // A single-column version of this page was tried before (see git history)

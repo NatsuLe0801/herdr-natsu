@@ -2,6 +2,7 @@ import { View, div, image } from "gpui-kit";
 import { v_flex } from "gpui-base";
 import { exec, home, theme, window as appWindow } from "herdr";
 import * as fs from "fs/promises";
+import { selectSession } from "./session.js";
 
 const POLL_MS = 2500;
 // image() paths resolve from ~/.config/herdr-app; the same file is written via the absolute path below.
@@ -47,13 +48,13 @@ export default class NatsuBrowserView extends View {
     this.busy = true;
     cx.spawn(async (cx) => {
       try {
-        // `screenshot` with no session would launch a blank browser, so only
-        // capture when `session list` reports one.
-        const list = await agentBrowser(["session", "list"]);
+        // Never let an implicit screenshot create or target the wrong session.
+        const list = await agentBrowser(["session", "list", "--json"]);
+        const session = list.code === 0 ? selectSession(list.stdout) : null;
         let hasShot = false;
-        if (list.code === 0 && /^Active sessions:/m.test(list.stdout)) {
+        if (session) {
           const abs = `${home()}/.config/herdr-app/${SHOT_REL.replace("mods/herdr-natsu/", "")}`;
-          const r = await agentBrowser(["screenshot", abs]);
+          const r = await agentBrowser(["screenshot", "--session", session, abs]);
           const size = r.code === 0 ? pngSize(await fs.readFile(abs).catch(() => new Uint8Array(0))) : null;
           if (size) {
             this.imgW = size.w;
