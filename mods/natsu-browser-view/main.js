@@ -102,6 +102,7 @@ export default class NatsuBrowserView extends View {
       this.session = session;
       this.hasShot = false;
       this.urlDirty = false;
+      this.viewportKey = null;
     });
   }
 
@@ -110,6 +111,7 @@ export default class NatsuBrowserView extends View {
     this.perform(cx, ["open", "--session", session], () => {
       this.session = session;
       this.hasShot = false;
+      this.viewportKey = null;
       this.setUrl("");
     });
   }
@@ -118,6 +120,7 @@ export default class NatsuBrowserView extends View {
     this.perform(cx, ["close", "--session", session], () => {
       if (this.session === session) this.session = null;
       this.hasShot = false;
+      this.viewportKey = null;
     });
   }
 
