@@ -14,9 +14,14 @@ export function selectSession(stdout, current = null) {
   return sessions.includes("default") ? "default" : sessions[0] ?? null;
 }
 
-export function reconcileSessions(stdout, requested, current) {
-  if (requested !== current) return null;
+export function reconcileSessions(stdout, requested, current, requestedRevision = 0, currentRevision = 0) {
+  if (requested !== current || requestedRevision !== currentRevision) return null;
   return { sessions: sessionNames(stdout), session: selectSession(stdout, current) };
+}
+
+export function navigationUrl(value) {
+  const url = value.trim();
+  return url && !url.startsWith("-") ? url : null;
 }
 
 export function nextSessionName(sessions) {

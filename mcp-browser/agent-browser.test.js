@@ -45,7 +45,7 @@ test("runAgentBrowser drains stdout chunks that arrive just after exit", async (
 
   child.stdout.write('{"success":');
   child.emit("exit", 0);
-  setTimeout(() => child.stdout.write("true}\n"), 5);
+  setTimeout(() => child.stdout.write("true}\n"), 50);
 
   assert.deepEqual(await resultPromise, { code: 0, stdout: '{"success":true}\n', stderr: "" });
 });

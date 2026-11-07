@@ -54,3 +54,15 @@ test("reconcileSessions discards a refresh for a tab that is no longer selected"
     session: "herdr-2",
   });
 });
+
+test("reconcileSessions discards a refresh invalidated by an action", () => {
+  const stdout = '{"success":true,"data":{"sessions":["herdr-1"]}}';
+  assert.equal(session.reconcileSessions(stdout, "herdr-1", "herdr-1", 2, 3), null);
+});
+
+test("navigationUrl rejects input that agent-browser would parse as an option", () => {
+  assert.equal(typeof session.navigationUrl, "function");
+  assert.equal(session.navigationUrl("  https://example.com  "), "https://example.com");
+  assert.equal(session.navigationUrl("--version"), null);
+  assert.equal(session.navigationUrl("   "), null);
+});

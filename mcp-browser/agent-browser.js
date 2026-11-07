@@ -26,7 +26,7 @@ export function runAgentBrowser(args, { bin = defaultAgentBrowserBin(), spawn = 
         child.stdout?.destroy();
         child.stderr?.destroy();
         done({ code: exitCode, stdout, stderr });
-      }, 25);
+      }, 100);
     };
     const child = spawn(bin, [...args, "--json"]);
     child.on("error", (err) => {

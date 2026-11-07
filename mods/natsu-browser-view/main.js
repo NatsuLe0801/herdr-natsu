@@ -2,7 +2,7 @@ import { View, div, image } from "gpui-kit";
 import { h_flex, v_flex, InputState, Input } from "gpui-base";
 import { exec, home, theme } from "herdr";
 import * as fs from "fs/promises";
-import { fitImage, nextSessionName, pageValue, reconcileSessions } from "./session.js";
+import { fitImage, navigationUrl, nextSessionName, pageValue, reconcileSessions } from "./session.js";
 
 const POLL_MS = 2500;
 const SHOT_REL = "mods/herdr-natsu/mods/natsu-browser-view/live.png";
@@ -29,9 +29,12 @@ export default class NatsuBrowserView extends View {
     this.imgH = 0;
     this.previewW = 0;
     this.previewH = 0;
+    this.rootH = 0;
+    this.toolbarH = 82;
     this.polling = false;
     this.actionBusy = false;
     this.refreshQueued = false;
+    this.revision = 0;
     this.editingUrl = false;
     this.error = null;
     this.url = InputState.new({ placeholder: "Enter a URL…" });
@@ -50,20 +53,29 @@ export default class NatsuBrowserView extends View {
   perform(cx, args, onSuccess) {
     if (this.actionBusy) return;
     this.actionBusy = true;
+    this.revision += 1;
     this.error = null;
     cx.notify();
     cx.spawn(async (cx) => {
       const result = await agentBrowser(args);
+      this.actionBusy = false;
+      if (this.closed) return;
       if (result.code === 0) onSuccess?.();
       else this.error = result.stderr || "agent-browser command failed";
-      this.actionBusy = false;
-      if (!this.closed) this.refresh(cx);
+      this.refresh(cx);
     });
   }
 
   navigate(cx) {
-    const url = this.url.value().trim();
-    if (!url) return;
+    const value = this.url.value();
+    const url = navigationUrl(value);
+    if (!url) {
+      if (value.trim()) {
+        this.error = "URL cannot start with a dash.";
+        cx.notify();
+      }
+      return;
+    }
     const session = this.session ?? nextSessionName(this.sessions);
     this.perform(cx, ["open", "--session", session, url], () => {
       this.session = session;
@@ -89,10 +101,12 @@ export default class NatsuBrowserView extends View {
 
   chooseSession(cx, session) {
     if (this.actionBusy || this.session === session) return;
+    this.revision += 1;
     this.session = session;
     this.hasShot = false;
     this.error = null;
-    if (!this.editingUrl) this.url.set_value("");
+    this.editingUrl = false;
+    this.url.set_value("");
     cx.notify();
     this.refresh(cx);
   }
@@ -106,11 +120,14 @@ export default class NatsuBrowserView extends View {
     this.refreshQueued = false;
     this.polling = true;
     const requested = this.session;
+    const requestedRevision = this.revision;
     cx.spawn(async (cx) => {
       try {
         const list = await agentBrowser(["session", "list", "--json"]);
-        const state = list.code === 0 ? reconcileSessions(list.stdout, requested, this.session) : null;
-        if (!state) return;
+        const state = list.code === 0
+          ? reconcileSessions(list.stdout, requested, this.session, requestedRevision, this.revision)
+          : null;
+        if (!state || this.closed) return;
         let hasShot = false;
         let pageUrl = null;
 
@@ -119,8 +136,10 @@ export default class NatsuBrowserView extends View {
             agentBrowser(["screenshot", "--session", state.session, SHOT_ABS]),
             agentBrowser(["get", "url", "--session", state.session, "--json"]),
           ]);
-          if (this.session !== requested) return;
-          const size = shot.code === 0 ? pngSize(await fs.readFile(SHOT_ABS).catch(() => new Uint8Array(0))) : null;
+          if (this.closed || this.session !== requested || this.revision !== requestedRevision) return;
+          const bytes = shot.code === 0 ? await fs.readFile(SHOT_ABS).catch(() => new Uint8Array(0)) : new Uint8Array(0);
+          if (this.closed || this.session !== requested || this.revision !== requestedRevision) return;
+          const size = pngSize(bytes);
           if (size) {
             this.imgW = size.w;
             this.imgH = size.h;
@@ -129,6 +148,7 @@ export default class NatsuBrowserView extends View {
           if (url.code === 0) pageUrl = pageValue(url.stdout, "url");
         }
 
+        if (this.closed || this.session !== requested || this.revision !== requestedRevision) return;
         this.sessions = state.sessions;
         this.session = state.session;
         this.hasShot = hasShot;
@@ -180,20 +200,28 @@ export default class NatsuBrowserView extends View {
       this.refresh(cx);
     }
     const t = theme();
+    const toolbar = v_flex().id("browser-toolbar").w_full().p(8).gap(6).flex_none().bg(t.chrome).border_b(1).border_color(t.border)
+      .on_size_change((size, cx) => {
+        if (size.height === this.toolbarH) return;
+        this.toolbarH = size.height;
+        this.previewH = Math.max(0, this.rootH - this.toolbarH);
+        cx.notify();
+      })
+      .child(this.sessionTabs(t))
+      .child(this.urlBar(t))
+      .when(Boolean(this.error), (el) => el.child(div().w_full().truncate().text_size(11).text_color(t.blocked).child(this.error)));
     const root = v_flex().id("browser-view-root").size_full().min_h(0).bg(t.background)
       .on_size_change((size, cx) => {
-        const previewH = Math.max(0, size.height - 82);
+        const previewH = Math.max(0, size.height - this.toolbarH);
         if (size.width === this.previewW && previewH === this.previewH) return;
+        this.rootH = size.height;
         this.previewW = size.width;
         this.previewH = previewH;
         cx.notify();
       })
-      .child(v_flex().w_full().p(8).gap(6).flex_none().bg(t.chrome).border_b(1).border_color(t.border)
-        .child(this.sessionTabs(t))
-        .child(this.urlBar(t)));
+      .child(toolbar);
     const content = v_flex().id("browser-preview").flex_1().min_h(0).w_full().items_center().justify_center().p(16);
 
-    if (this.error) return root.child(content.child(div().text_color(t.blocked).text_size(12).child(this.error)));
     if (!this.session) return root.child(content.child(div().text_color(t.dim).text_size(13).child("Enter a URL or add a tab")));
     if (!this.hasShot) return root.child(content.child(div().text_color(t.dim).text_size(13).child("Loading browser…")));
 
