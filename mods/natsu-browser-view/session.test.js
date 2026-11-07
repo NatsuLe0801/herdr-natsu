@@ -66,3 +66,9 @@ test("navigationUrl rejects input that agent-browser would parse as an option", 
   assert.equal(session.navigationUrl("--version"), null);
   assert.equal(session.navigationUrl("   "), null);
 });
+
+test("syncUrlDraft never overwrites an unsubmitted URL", () => {
+  assert.equal(typeof session.syncUrlDraft, "function");
+  assert.equal(session.syncUrlDraft("https://example.com", "about:blank", true), "https://example.com");
+  assert.equal(session.syncUrlDraft("https://example.com", "https://iana.org/", false), "https://iana.org/");
+});

@@ -2,7 +2,7 @@ import { View, div, image } from "gpui-kit";
 import { h_flex, v_flex, InputState, Input } from "gpui-base";
 import { exec, home, theme } from "herdr";
 import * as fs from "fs/promises";
-import { fitImage, navigationUrl, nextSessionName, pageValue, reconcileSessions } from "./session.js";
+import { browserViewport, fitImage, navigationUrl, nextSessionName, pageValue, reconcileSessions, syncUrlDraft } from "./session.js";
 
 const POLL_MS = 2500;
 const SHOT_REL = "mods/herdr-natsu/mods/natsu-browser-view/live.png";
@@ -36,11 +36,24 @@ export default class NatsuBrowserView extends View {
     this.refreshQueued = false;
     this.revision = 0;
     this.editingUrl = false;
+    this.urlDirty = false;
+    this.syncingUrl = false;
+    this.viewportKey = null;
     this.error = null;
     this.url = InputState.new({ placeholder: "Enter a URL…" });
+    this.urlDraft = "";
     this.url.on("focus", () => { this.editingUrl = true; });
     this.url.on("blur", () => { this.editingUrl = false; });
-    this.url.on("submit", (_e, cx) => this.navigate(cx));
+    this.url.on("change", () => {
+      if (this.syncingUrl || !this.editingUrl) return;
+      this.urlDraft = this.url.value();
+      this.urlDirty = true;
+    });
+    this.url.on("submit", (_e, cx) => {
+      this.urlDraft = this.url.value();
+      this.urlDirty = true;
+      this.navigate(cx);
+    });
     this.timer = cx.timer.every(POLL_MS, (cx) => this.refresh(cx));
   }
 
@@ -48,6 +61,14 @@ export default class NatsuBrowserView extends View {
     this.closed = true;
     this.url?.release();
     if (this.timer && !this.timer.is_done()) this.timer.cancel();
+  }
+
+  setUrl(value, dirty = false) {
+    this.syncingUrl = true;
+    this.url.set_value(value);
+    this.syncingUrl = false;
+    this.urlDraft = value;
+    this.urlDirty = dirty;
   }
 
   perform(cx, args, onSuccess) {
@@ -67,7 +88,7 @@ export default class NatsuBrowserView extends View {
   }
 
   navigate(cx) {
-    const value = this.url.value();
+    const value = this.urlDirty ? this.urlDraft : this.url.value();
     const url = navigationUrl(value);
     if (!url) {
       if (value.trim()) {
@@ -80,6 +101,7 @@ export default class NatsuBrowserView extends View {
     this.perform(cx, ["open", "--session", session, url], () => {
       this.session = session;
       this.hasShot = false;
+      this.urlDirty = false;
     });
   }
 
@@ -88,7 +110,7 @@ export default class NatsuBrowserView extends View {
     this.perform(cx, ["open", "--session", session], () => {
       this.session = session;
       this.hasShot = false;
-      this.url.set_value("");
+      this.setUrl("");
     });
   }
 
@@ -106,7 +128,7 @@ export default class NatsuBrowserView extends View {
     this.hasShot = false;
     this.error = null;
     this.editingUrl = false;
-    this.url.set_value("");
+    this.setUrl("");
     cx.notify();
     this.refresh(cx);
   }
@@ -132,6 +154,13 @@ export default class NatsuBrowserView extends View {
         let pageUrl = null;
 
         if (state.session) {
+          const viewport = browserViewport(this.previewW, this.previewH);
+          const viewportKey = viewport ? `${state.session}:${viewport.w}x${viewport.h}` : null;
+          if (viewport && viewportKey !== this.viewportKey) {
+            const resized = await agentBrowser(["set", "viewport", String(viewport.w), String(viewport.h), "--session", state.session]);
+            if (this.closed || this.session !== requested || this.revision !== requestedRevision) return;
+            if (resized.code === 0) this.viewportKey = viewportKey;
+          }
           const [shot, url] = await Promise.all([
             agentBrowser(["screenshot", "--session", state.session, SHOT_ABS]),
             agentBrowser(["get", "url", "--session", state.session, "--json"]),
@@ -152,7 +181,8 @@ export default class NatsuBrowserView extends View {
         this.sessions = state.sessions;
         this.session = state.session;
         this.hasShot = hasShot;
-        if (!this.editingUrl) this.url.set_value(pageUrl ?? "");
+        const nextUrl = syncUrlDraft(this.urlDraft, pageUrl, this.urlDirty);
+        if (nextUrl !== this.url.value()) this.setUrl(nextUrl, this.urlDirty);
       } finally {
         this.polling = false;
         if (!this.closed && this.refreshQueued) this.refresh(cx);

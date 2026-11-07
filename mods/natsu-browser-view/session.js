@@ -30,6 +30,17 @@ export function nextSessionName(sessions) {
   return `herdr-${index}`;
 }
 
+export function syncUrlDraft(draft, pageUrl, dirty) {
+  return dirty ? draft : pageUrl ?? "";
+}
+
+export function browserViewport(containerW, containerH) {
+  const width = Math.floor(containerW - 32);
+  const height = Math.floor(containerH - 32);
+  if (width <= 0 || height <= 0) return null;
+  return { w: Math.max(320, width), h: Math.max(240, height) };
+}
+
 export function fitImage(containerW, containerH, imageW, imageH) {
   const availableW = Math.max(0, containerW - 32);
   const availableH = Math.max(0, containerH - 32);
