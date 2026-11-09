@@ -1,57 +1,148 @@
-# Herdr Natsu Folders
+# Herdr Natsu
 
-Herdr's spaces list with folders: colored, foldable folders above the loose spaces, filled by dragging or by rules on the folder a space works in, kept in a file in the home of the machine the spaces run on.
+A bundle of six [Herdr](https://herdr.dev) mods, one layout (`natsu`) that wires
+them together, and three MCP servers (`natsu-hc`, `natsu-browser`,
+`agent-desktop`) that the bundle installs and keeps up for Claude Code.
+Installed, it replaces Herdr's sidebar, status bar and top panel bar with
+richer versions and adds a Browser panel and a Settings page.
+
+![Herdr Natsu](preview.png)
 
 ## What you see
 
-- **The Spaces header**, 31px: "Spaces" in `dim` 11.5px, then a folder-plus button and Herdr's + (a new space), each 26px.
-- **Per machine** (a header per machine once another one is known, as in Herdr's list; each header gets a folder-plus next to its +): the machine's folders in their order, each followed by its spaces when unfolded, then the spaces in no folder.
-- **A folder's row**, 30px like a space's: an 18px tile with 5px corners in the folder's color (one of the space avatars' six, `#22a99a #e3814f #5b8def #8b7cf6 #3fae6a #d9649a`, or `dim` grey) holding a white 13px folder icon, the name in `foreground` medium weight, a status glyph when folded and an agent in it is blocked or done, a `dim` "+", the count, and a chevron (down open, right folded).
-- **Spaces in a folder** are Herdr's space rows indented to 26px; worktrees stay under their checkout.
-- **A machine in a folder** (a folder on this computer whose rules take it in): the machine's header, indented to 26px like the folder's spaces, then its folders and spaces a step further in like under a folder, at 44px (its own folders' spaces at 62px). It no longer has a group of its own below, and once every other machine is in a folder the "This computer" header goes too. The folder's count and folded status include the machine's spaces.
-- **While dragging**: a space over a folder gives the folder an `accent` border on `selected`; a dragged folder goes half transparent and a 2px `accent` line shows where it lands; a space dragged out of a folder shows a dashed drop zone under the list, "Drop here to take it out of its folder".
-- **A folder's menu** (right-click), 210 by 160: seven 20px color dots (the current one ringed in `foreground`), "New space here", "Edit folder…", "Delete folder".
-- **Edit folder**, a 460px dialog: Name; "Start new spaces in" with "Choose…" on this computer; "Collect spaces from" with a hint; Cancel and Save.
+- **Sidebar, left** (`natsu-folders`, a clone of Herdr's own `spaces`): a
+  "Spaces" header (31px) with a folder-plus and Herdr's own + button; below
+  it, each machine's folders in order, each a 30px row (an 18px colored tile
+  with a white folder glyph, the name, a count, a chevron), followed by its
+  unfolded spaces indented to 26px, then the spaces in no folder. A folded
+  folder still shows a status glyph if an agent inside is `blocked` or
+  `done`. Below the sidebar, the agents list (unchanged from Herdr's own
+  `agents`).
+- **Top panel bar** (`natsu-tabs`, a clone of Herdr's `tabs`): the tab pills
+  plus four more buttons — Files, Changes, Settings (gear), Browser —
+  toggling panels that open on the right, remembered per space.
+- **Settings panel** (`natsu-settings`, opened from the gear button): three
+  sections — MCP (`natsu-hc`), Agent Desktop, Browser (`natsu-browser`) —
+  each showing live install/registration status (Node, the binary, Claude
+  Code registration) with an Install/Repair button per section.
+- **Browser panel** (`natsu-browser-view`, opened from the Browser button): a
+  URL bar with an input field, tab strip, and a live screenshot of the page
+  that polls every 2.5s, fit to the panel's size.
+- **Status bar, bottom** (`natsu-status`, a clone of Herdr's
+  `workspace-status`): the active space's machine name, agent counts by
+  status, and CPU/RAM/GPU per machine.
 
 ## How it behaves
 
-- Click a folder to fold or unfold it. Press on a space and release on a folder to file it there; on another space to move it to that place (`space.move`) and into that space's folder; anywhere else in the list to take it out of its folder. Press on a folder and release on another to reorder: down puts it after, up before. Only within a machine.
-- `alt-down` / `alt-up` (and `ctrl-shift-pagedown` / `pageup`, `ctrl-space shift-n` / `shift-p`) show the space below or above the one in front, in the order the list draws them: through each folder and the machines in it, then the loose spaces, then the next machine. Spaces in a folded folder or machine are skipped; past the last space it goes round to the first. When the space in front is folded away, it steps from where that space would be.
-- When the space in front closes, the space shown above it in the list comes in front (the one below when it was at the top), instead of the one Herdr picks by its own order. Spaces in folded folders are skipped.
-- A space's folder: the one it was dragged into; "" (dragged out) keeps it out; otherwise the folder whose rules match deepest into the folder its first terminal works in (`~/code/client` beats `~/code`; on a tie the first folder wins). A worktree goes with its checkout's space.
-- A machine goes in the first folder on this computer whose rules match its name or the folder one of its spaces works in; a rule like `vm-*` matches a name the way it matches a folder name.
-- Rules, comma-separated, each take a folder and everything in it: starting with `/` or `~` they're paths (`~` any home: `/home/x`, `/Users/x`, `/root`), otherwise a folder name at any depth; `*` is any one folder name.
-- A folder's + and "New space here" run `space.new` with the start folder (`~` made the machine's `$HOME`) and the machine; the first space that then appears on that machine goes in the folder (Herdr returns no id).
-- A space made any other way (Herdr's `space.new` keys, the palette, a script) that comes up in front within 3 seconds goes right under the space in front before it, when it's on the same machine and the only new space then: in the folder that space showed in, and after it in Herdr's order (`space.move`), which the list keeps inside a folder. Spaces of a machine coming in don't count. The list's own + and a machine's + (or "New space there") make one in no folder: the first new space after them is left alone.
-- Choosing a start folder while the rules are empty (or the same as it) sets the rules to it too.
-- While a folder's name is still "New folder" (or empty, or the start folder's last part), it follows the start folder's last part, typed or chosen: `~/Projects/herdr/` names it `herdr`. Typing a name of its own stops that.
-- Every change is shown at once (shared `natsu-folders`, per machine, `""` for this computer) and written to `~/.config/herdr-natsu-folders.json` on that machine (`exec sh` with `on`, through a temp file). Every 15 seconds each connected machine's file is read again; a file whose `at` is newer than what's shown wins.
+- **Folders** (`natsu-folders`): click to fold/unfold; drag a space onto a
+  folder to file it, onto another space to reorder and re-file, below the
+  list to take it out of its folder; drag a folder onto another to reorder.
+  Right-click a folder for a color/edit/delete menu; "Edit folder…" opens a
+  dialog for its name, start folder (via the system folder picker) and
+  comma-separated collection rules (paths with `~`/`/`, or a bare folder name
+  matched at any depth, `*` for one segment). `alt-up`/`alt-down` (and the
+  bound `ctrl-shift-pageup/down`, `ctrl-space shift-p/n`) step through the
+  full visual order — folders, their spaces, loose spaces, next machine —
+  skipping folded folders. State is written to
+  `~/.config/herdr-natsu-folders.json` on the machine the spaces run on
+  (`exec` with `on`), re-read every 15s so every connected screen agrees.
+- **Settings** (`natsu-settings`): each section polls its checks (`exec` of
+  `node --version`, the binary itself, etc.) every few seconds; Install runs
+  `mcp-browser/install-worker.js` or `npm install -g agent-browser` /
+  `agent-desktop`, then `claude mcp add`, writing progress to
+  `.install-status` so a reload doesn't lose state mid-install.
+- **Browser** (`natsu-browser-view`): typing a URL and pressing Enter (or the
+  arrows) calls the bundled CLI (`mcp-browser/run-cli.js`, wrapping
+  `agent-browser`) to navigate; the panel polls two alternating screenshot
+  files (`live-a.png`/`live-b.png`) to avoid tearing while a new one is
+  written, and fits whichever loaded last to the panel.
+- **Status bar** (`natsu-status`): re-renders on every `agents()`/`spaces()`
+  change; CPU/RAM/GPU per machine come from a periodic `exec`/`hc` sampling
+  loop, one per connected machine.
+- **Tabs** (`natsu-tabs`): panel visibility is kept in `shared("workspace.panels")`
+  per space, same mechanism Herdr's own `files`/`changes` buttons use, so a
+  panel you opened for one space doesn't follow you to another.
 
 ## Built from
 
-- **Mod** `mods/natsu-folders/`: `mod.clone` of Herdr's `spaces` (0.1.10), so its git, worktree, machine and drag-to-reorder code is Herdr's. Added: folders in `grouped` (`foldered`, `folderHead`), the drop and reorder handlers, the menu (overlay props `folderMenu, machine`) and the edit dialog (overlay props `edit, machine, fresh`) as modes of the same mod.
-- **Layout** `layouts/natsu.json`: Herdr's `main` 0.1.10 with the `spaces` block's mod set to `natsu-folders`.
-- **Keys** `keys.json`: a `layout:natsu` section binding Herdr's next/previous space keys to `natsu-folders.next` and `natsu-folders.prev`. Drawing the list fills the spaces' order (shown or folded away) as it goes; the mod's `nextCommand()` loop steps through it and runs `space.select {id}`.
-- **herdr**: `spaces`, `panes`, `machines`, `run` (`space.new`, `space.move`, `space.select`), `openOverlay`, `closeOverlay`, `props`, `shared` / `setShared` (`natsu-folders`, `natsu-folders.new`), `exec` (with `on`), `pickFolder`, `home`, `nextCommand`.
-- **Icons**: Herdr's own, from `mods/workspace-chrome/` (folder, folder-plus, chevrons, plus).
+- **Mods**, each `mod.clone` of a shipped mod, edited in place:
+  - `mods/natsu-folders/` — clone of `spaces` 0.1.10. Adds folders to
+    `grouped` (`foldered`, `folderHead`), drop/reorder handlers, a menu
+    overlay (`folderMenu, machine`) and an edit dialog overlay
+    (`edit, machine, fresh`).
+  - `mods/natsu-tabs/` — clone of `tabs` 0.1.13. Adds the Files/Changes/
+    Settings/Browser buttons and `shared("workspace.panels")` toggling.
+  - `mods/natsu-status/` — clone of `workspace-status` 0.1.10. Adds
+    per-machine CPU/RAM/GPU sampling via `hc`/`exec`.
+  - `mods/natsu-agents/` — clone of `agents` 0.1.10. Adds grouped/priority
+    view toggle and live Claude Code context-window usage (reads terminal
+    text with `hc`).
+  - `mods/natsu-settings/` (new) and `mods/natsu-browser-view/` (new) —
+    not clones; `state.js`/`session.js` hold their pure logic (each with a
+    `*.test.js`), `main.js` the `View`.
+- **Layout** `layouts/natsu.json`: Herdr's `main` 0.1.10 with the sidebar's
+  spaces block set to `natsu-folders`, the tab bar's mod set to
+  `natsu-tabs`, and the status bar's mod set to `natsu-status`.
+- **Keys** `keys.json`: a `layout:Natsu` section binding `alt-up`/`alt-down`
+  and Herdr's other next/previous-space keys to `natsu-folders.next`/`.prev`.
+- **MCP servers**, registered with `claude mcp add -s user`:
+  - `mcp/` (`natsu-hc`) — a small Node server wrapping `hc` across every
+    paired machine.
+  - `mcp-browser/` (`natsu-browser`) — wraps the npm `agent-browser` CLI;
+    its `run-cli.js` is also called directly by `natsu-browser-view`.
+  - `agent-desktop` (vercel-labs) — installed from npm as-is, no local
+    server code.
+- **`install.sh`**: clones/updates this repo into
+  `~/.config/herdr-app/mods/herdr-natsu`, symlinks all six mod folders into
+  Herdr's `mods/`, copies `layouts/natsu.json`, merges `keys.json`, runs
+  `npm install` in `mcp/` and `mcp-browser/`, installs `agent-browser` and
+  `agent-desktop` globally, registers all three MCP servers, and switches
+  to the `natsu` layout.
+- **herdr**: `spaces`, `panes`, `machines`, `agents`, `terminals`, `focused`,
+  `theme`, `keys`, `settings`, `window`, `layout`, `hc`, `run`
+  (`space.new`, `space.move`, `space.select`, `layout.switch`), `openOverlay`,
+  `closeOverlay`, `props`, `shared`/`setShared`, `exec` (with `on`),
+  `pickFolder`, `home`, `nextCommand`, `setAgentOrder`.
+- **Icons**: Herdr's own, from `mods/workspace-chrome/` (folder, chevrons,
+  plus, window controls), plus `natsu-settings/gear.svg`.
 
 ## Watch out
 
-- There's no drag and drop between elements in mods: it's press on one, release on another, as Herdr's own tabs and spaces do.
-- Herdr doesn't reload a mod from a symlinked folder when a file changes; recreating the link (or a restart) does.
-- An overlay opened while its mod reloads can come up late or not at all.
-- Space ids are per machine: remote spaces show as `machine/id` here and are stored by their own id in that machine's file.
-- Herdr's right-click menu on a space can't be extended without cloning it, so there's no "Move to folder" there: drag instead.
-- Herdr's own `space.next` and `space.prev` go by the order it keeps the spaces in, which folders don't change, so they jump around the list: the keys have to name the mod's commands instead. Those reach only a copy that shows, so with the sidebar hidden (`ctrl-shift-b`) they do nothing. The section is per layout: a layout of another name needs its own `layout:<name>` section.
+- This bundle keeps `layouts/natsu.json` alongside its mods, unlike a
+  single-mod share: it's six mods meant to travel together with the one
+  layout that wires them in, not a drop-in panel for someone's own layout.
+  `natsu-folders` alone can still be pointed at from any layout's spaces
+  block (see README's "Your own layout").
+- No drag-and-drop between elements in mods — folders use press-on-one,
+  release-on-another, like Herdr's own tabs/spaces.
+- Herdr doesn't reload a mod from a symlinked folder when a file changes;
+  recreating the symlink (or restarting) does — relevant since `install.sh`
+  links every mod rather than copying it.
+- Space ids are per machine; remote spaces show as `machine/id` here and are
+  stored by their own id in that machine's folders file.
+- The `layout:Natsu` keys section only reaches a shown copy of
+  `natsu-folders`; with the sidebar hidden (`ctrl-shift-b`) `alt-up`/`down`
+  do nothing. A renamed layout needs its own `layout:<name>` section.
+- `natsu-browser-view` and `natsu-settings` both shell out (`exec`, `node`,
+  `npm`, `claude mcp add`) and the Settings page installs two more MCP
+  servers from npm — tell whoever adds this bundle before they do, per
+  AGENTS.md's recipe step 1.
+- The Browser panel depends on `agent-browser` being installed and on
+  `mcp-browser/run-cli.js` existing at a fixed path under this repo; moving
+  the repo without re-running `install.sh` breaks it.
 
 ## Done when
 
-- `herdr-app check ~/.config/herdr-app/mods/natsu-folders` passes.
-- The folder-plus button opens Edit folder for a new folder, which is made only on Save; Cancel leaves nothing behind.
-- Dragging a space onto a folder files it; dragging it out puts it back; dragging a folder reorders the folders.
-- A folder with a start folder opens its new spaces there, in the folder.
-- Closing the space in front (`space.close`) shows the space above it in the list.
-- `herdr-app do space.new` while a space in a folder is in front puts the new space right under it, in that folder; the list's + puts it in none.
-- A rule such as `herdr-*` collects the spaces working in matching folders.
-- `herdr-app do natsu-folders.next` from the last space of a folder shows the first space of the next folder, and from the last space in the list the first one.
-- `~/.config/herdr-natsu-folders.json` changes with every edit, and another Herdr on the same machine shows the same folders.
+- `herdr-app check ~/.config/herdr-app/mods/natsu-folders` (and the same for
+  each of the other five mods) passes.
+- `layout.switch --name natsu` shows the sidebar with folders, the four
+  extra top-bar buttons, and the status bar's per-machine CPU/RAM/GPU.
+- Dragging a space onto a folder files it; `alt-up`/`alt-down` step through
+  folders and spaces in visual order.
+- The gear button opens Settings and each of its three sections reports a
+  real install/registration status (not stuck on "checking").
+- The Browser button opens a panel that navigates to a typed URL and shows
+  a live screenshot.
+- `sh install.sh` run twice in a row succeeds both times with no duplicate
+  MCP registrations (`claude mcp list` shows `natsu-hc`, `natsu-browser`,
+  `agent-desktop` once each).
