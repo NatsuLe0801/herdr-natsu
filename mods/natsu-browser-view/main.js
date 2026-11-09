@@ -2,11 +2,18 @@ import { View, div, image } from "gpui-kit";
 import { h_flex, v_flex, InputState, Input } from "gpui-base";
 import { exec, home, theme } from "herdr";
 import * as fs from "fs/promises";
-import { browserViewport, fitImage, navigationUrl, nextSessionName, pageValue, reconcileSessions, syncUrlDraft } from "./session.js";
+import { browserViewport, fitImage, navigationUrl, nextSessionName, nextShotIndex, pageValue, reconcileSessions, sameImage, shouldTrackUrlChange, syncUrlDraft } from "./session.js";
 
 const POLL_MS = 2500;
-const SHOT_REL = "mods/herdr-natsu/mods/natsu-browser-view/live.png";
-const SHOT_ABS = `${home()}/.config/herdr-app/mods/natsu-browser-view/live.png`;
+const URL_COMMIT_MS = 300;
+const SHOT_RELS = [
+  "mods/herdr-natsu/mods/natsu-browser-view/live-a.png",
+  "mods/herdr-natsu/mods/natsu-browser-view/live-b.png",
+];
+const SHOT_ABS = [
+  `${home()}/.config/herdr-app/mods/natsu-browser-view/live-a.png`,
+  `${home()}/.config/herdr-app/mods/natsu-browser-view/live-b.png`,
+];
 const RUNNER = `${home()}/.config/herdr-app/mods/herdr-natsu/mcp-browser/run-cli.js`;
 
 function agentBrowser(args) {
@@ -27,12 +34,15 @@ export default class NatsuBrowserView extends View {
     this.hasShot = false;
     this.imgW = 0;
     this.imgH = 0;
+    this.shotIndex = null;
+    this.lastShot = null;
     this.previewW = 0;
     this.previewH = 0;
     this.rootH = 0;
     this.toolbarH = 82;
     this.polling = false;
     this.actionBusy = false;
+    this.submittingUrl = false;
     this.refreshQueued = false;
     this.revision = 0;
     this.editingUrl = false;
@@ -45,15 +55,11 @@ export default class NatsuBrowserView extends View {
     this.url.on("focus", () => { this.editingUrl = true; });
     this.url.on("blur", () => { this.editingUrl = false; });
     this.url.on("change", () => {
-      if (this.syncingUrl || !this.editingUrl) return;
+      if (!shouldTrackUrlChange(this.syncingUrl)) return;
       this.urlDraft = this.url.value();
       this.urlDirty = true;
     });
-    this.url.on("submit", (_e, cx) => {
-      this.urlDraft = this.url.value();
-      this.urlDirty = true;
-      this.navigate(cx);
-    });
+    this.url.on("submit", (_e, cx) => this.submitUrl(cx));
     this.timer = cx.timer.every(POLL_MS, (cx) => this.refresh(cx));
   }
 
@@ -84,6 +90,22 @@ export default class NatsuBrowserView extends View {
       if (result.code === 0) onSuccess?.();
       else this.error = result.stderr || "agent-browser command failed";
       this.refresh(cx);
+    });
+  }
+
+  submitUrl(cx) {
+    if (this.actionBusy || this.submittingUrl) return;
+    this.submittingUrl = true;
+    this.revision += 1;
+    cx.timer.after(URL_COMMIT_MS, (cx) => {
+      if (this.closed) return;
+      const value = this.url.value().trim();
+      if (value) {
+        this.urlDraft = value;
+        this.urlDirty = true;
+      }
+      this.submittingUrl = false;
+      this.navigate(cx);
     });
   }
 
@@ -138,7 +160,7 @@ export default class NatsuBrowserView extends View {
 
   refresh(cx) {
     if (this.closed) return;
-    if (this.actionBusy || this.polling) {
+    if (this.actionBusy || this.submittingUrl || this.polling) {
       this.refreshQueued = true;
       return;
     }
@@ -153,7 +175,7 @@ export default class NatsuBrowserView extends View {
           ? reconcileSessions(list.stdout, requested, this.session, requestedRevision, this.revision)
           : null;
         if (!state || this.closed) return;
-        let hasShot = false;
+        let hasShot = state.session ? this.hasShot : false;
         let pageUrl = null;
 
         if (state.session) {
@@ -164,18 +186,23 @@ export default class NatsuBrowserView extends View {
             if (this.closed || this.session !== requested || this.revision !== requestedRevision) return;
             if (resized.code === 0) this.viewportKey = viewportKey;
           }
+          const nextIndex = nextShotIndex(this.shotIndex);
           const [shot, url] = await Promise.all([
-            agentBrowser(["screenshot", "--session", state.session, SHOT_ABS]),
+            agentBrowser(["screenshot", "--session", state.session, SHOT_ABS[nextIndex]]),
             agentBrowser(["get", "url", "--session", state.session, "--json"]),
           ]);
           if (this.closed || this.session !== requested || this.revision !== requestedRevision) return;
-          const bytes = shot.code === 0 ? await fs.readFile(SHOT_ABS).catch(() => new Uint8Array(0)) : new Uint8Array(0);
+          const bytes = shot.code === 0 ? await fs.readFile(SHOT_ABS[nextIndex]).catch(() => new Uint8Array(0)) : new Uint8Array(0);
           if (this.closed || this.session !== requested || this.revision !== requestedRevision) return;
           const size = pngSize(bytes);
           if (size) {
+            if (!sameImage(this.lastShot, bytes)) {
+              this.lastShot = bytes;
+              this.shotIndex = nextIndex;
+            }
             this.imgW = size.w;
             this.imgH = size.h;
-            hasShot = true;
+            hasShot = this.shotIndex != null;
           }
           if (url.code === 0) pageUrl = pageValue(url.stdout, "url");
         }
@@ -217,13 +244,14 @@ export default class NatsuBrowserView extends View {
   }
 
   urlBar(t) {
+    const busy = this.actionBusy || this.submittingUrl;
     return h_flex().w_full().h(30).gap(6)
       .child(div().flex_1().min_w(0).h_full().px(8).flex().items_center().rounded(7).border(1)
         .border_color(this.editingUrl ? t.accent : t.input).bg(t.background)
         .child(Input.new(this.url).w_full().h_full().text_size(12).text_color(t.foreground)))
       .child(h_flex().id("browser-url-go").h_full().px(10).rounded(7).items_center().justify_center().flex_none()
-        .bg(this.actionBusy ? t.chrome : t.solid).text_color(this.actionBusy ? t.dim : t.solid_foreground).text_size(12)
-        .when(!this.actionBusy, (el) => el.cursor_pointer().hover((s) => s.bg(t.accent)).on_click((_e, cx) => this.navigate(cx)))
+        .bg(busy ? t.chrome : t.solid).text_color(busy ? t.dim : t.solid_foreground).text_size(12)
+        .when(!busy, (el) => el.cursor_pointer().hover((s) => s.bg(t.accent)).on_click((_e, cx) => this.submitUrl(cx)))
         .child("Go"));
   }
 
@@ -259,6 +287,6 @@ export default class NatsuBrowserView extends View {
     if (!this.hasShot) return root.child(content.child(div().text_color(t.dim).text_size(13).child("Loading browser…")));
 
     const size = fitImage(this.previewW, this.previewH, this.imgW, this.imgH);
-    return root.child(content.when(size.w > 0, (el) => el.child(image(SHOT_REL).w(size.w).h(size.h))));
+    return root.child(content.when(size.w > 0 && this.shotIndex != null, (el) => el.child(image(SHOT_RELS[this.shotIndex]).w(size.w).h(size.h))));
   }
 }

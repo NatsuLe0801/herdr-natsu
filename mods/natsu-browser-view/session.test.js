@@ -72,3 +72,9 @@ test("syncUrlDraft never overwrites an unsubmitted URL", () => {
   assert.equal(session.syncUrlDraft("https://example.com", "about:blank", true), "https://example.com");
   assert.equal(session.syncUrlDraft("https://example.com", "https://iana.org/", false), "https://iana.org/");
 });
+
+test("shouldTrackUrlChange depends only on internal syncing", () => {
+  assert.equal(typeof session.shouldTrackUrlChange, "function");
+  assert.equal(session.shouldTrackUrlChange(false), true);
+  assert.equal(session.shouldTrackUrlChange(true), false);
+});

@@ -30,15 +30,26 @@ export function nextSessionName(sessions) {
   return `herdr-${index}`;
 }
 
+export function shouldTrackUrlChange(syncing) {
+  return !syncing;
+}
+
 export function syncUrlDraft(draft, pageUrl, dirty) {
   return dirty ? draft : pageUrl ?? "";
 }
 
-export function browserViewport(containerW, containerH) {
-  const width = Math.floor(containerW - 32);
-  const height = Math.floor(containerH - 32);
-  if (width <= 0 || height <= 0) return null;
-  return { w: Math.max(320, width), h: Math.max(240, height) };
+export function browserViewport() {
+  return { w: 1920, h: 1080 };
+}
+
+export function nextShotIndex(current) {
+  return current === 0 ? 1 : 0;
+}
+
+export function sameImage(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) if (a[i] !== b[i]) return false;
+  return true;
 }
 
 export function fitImage(containerW, containerH, imageW, imageH) {
