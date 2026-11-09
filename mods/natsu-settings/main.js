@@ -43,9 +43,9 @@ const SECTIONS = [
     pathLabel: `${MCP_DIR}/server.js`,
   },
   {
-    id: "computer-use", label: "Computer Use", icon: "terminal",
-    title: "Computer Use",
-    subtitle: "agent-desktop — snapshot/click/type desktop control via OS accessibility APIs",
+    id: "agent-desktop", label: "Agent Desktop", icon: "terminal",
+    title: "Agent Desktop",
+    subtitle: "Snapshot/click/type desktop control via OS accessibility APIs",
     serverName: "agent-desktop",
     checks: [{ key: "agentDesktop", label: "agent-desktop installed", get bin() { return appWindow()?.platform === "windows" ? "agent-desktop.cmd" : "agent-desktop"; }, args: ["--version"] }],
     depsCheck: null,

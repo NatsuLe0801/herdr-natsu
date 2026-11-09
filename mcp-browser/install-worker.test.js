@@ -109,9 +109,9 @@ test("browser install worker plans CLI, runtime, dependencies, then registration
   assert.deepEqual(plan[3].args.slice(0, 6), ["mcp", "add", "-s", "user", "natsu-browser", "--"]);
 });
 
-test("computer-use worker installs agent-desktop from npm, then registers it", async () => {
+test("agent-desktop worker installs agent-desktop from npm, then registers it", async () => {
   const result = await new Promise((resolve) => {
-    const child = spawn(process.execPath, [worker, "--dry-run", "computer-use", "agent-desktop", "register"], { windowsHide: true });
+    const child = spawn(process.execPath, [worker, "--dry-run", "agent-desktop", "agent-desktop", "register"], { windowsHide: true });
     let stdout = "";
     child.stdout.on("data", (chunk) => { stdout += chunk; });
     child.on("close", (code) => resolve({ code, stdout }));

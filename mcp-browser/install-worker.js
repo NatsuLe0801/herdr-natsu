@@ -14,7 +14,7 @@ const statusDir = process.env.HERDR_INSTALL_STATUS_DIR
 function plans() {
   const register = {
     mcp: { id: "register", cmd: "claude", args: ["mcp", "add", "-s", "user", "natsu-hc", "--", "node", path.join(mcpDir, "server.js")] },
-    "computer-use": { id: "register", cmd: "claude", args: ["mcp", "add", "-s", "user", "agent-desktop", "--transport", "stdio", "--", "agent-desktop", "mcp"] },
+    "agent-desktop": { id: "register", cmd: "claude", args: ["mcp", "add", "-s", "user", "agent-desktop", "--transport", "stdio", "--", "agent-desktop", "mcp"] },
     browser: { id: "register", cmd: "claude", args: ["mcp", "add", "-s", "user", "natsu-browser", "--", "node", path.join(browserDir, "server.js")] },
   };
   return {
@@ -22,9 +22,9 @@ function plans() {
       "mcp-deps": { id: "mcp-deps", cmd: "npm", args: ["install"], cwd: mcpDir },
       register: register.mcp,
     },
-    "computer-use": {
+    "agent-desktop": {
       "agent-desktop": { id: "agent-desktop", cmd: "npm", args: ["install", "-g", "agent-desktop"] },
-      register: register["computer-use"],
+      register: register["agent-desktop"],
     },
     browser: {
       "browser-cli": { id: "browser-cli", cmd: "npm", args: ["install", "-g", "agent-browser"] },
