@@ -109,9 +109,9 @@ test("browser install worker plans CLI, runtime, dependencies, then registration
   assert.deepEqual(plan[3].args.slice(0, 6), ["mcp", "add", "-s", "user", "natsu-browser", "--"]);
 });
 
-test("computer-use worker uses the privacy-preserving official installer", async () => {
+test("computer-use worker installs agent-desktop from npm, then registers it", async () => {
   const result = await new Promise((resolve) => {
-    const child = spawn(process.execPath, [worker, "--dry-run", "computer-use", "cua-driver", "register"], { windowsHide: true });
+    const child = spawn(process.execPath, [worker, "--dry-run", "computer-use", "agent-desktop", "register"], { windowsHide: true });
     let stdout = "";
     child.stdout.on("data", (chunk) => { stdout += chunk; });
     child.on("close", (code) => resolve({ code, stdout }));
@@ -119,9 +119,6 @@ test("computer-use worker uses the privacy-preserving official installer", async
 
   assert.equal(result.code, 0);
   const plan = JSON.parse(result.stdout);
-  assert.equal(plan[0].args.at(-1).includes("CUA_DRIVER_RS_TELEMETRY_ENABLED='0'"), true);
-  assert.equal(plan[0].args.at(-1).includes("-NoAutoStart"), true);
-  assert.deepEqual(plan[1].args.slice(0, 8), ["mcp", "add", "-s", "user", "cua-driver", "--transport", "stdio", "--"]);
-  assert.equal(process.platform === "win32" ? plan[1].args.at(-2).endsWith("cua-driver.exe") : plan[1].args.at(-2) === "cua-driver", true);
-  assert.equal(plan[1].args.at(-1), "mcp");
+  assert.deepEqual(plan[0].args, ["install", "-g", "agent-desktop"]);
+  assert.deepEqual(plan[1].args, ["mcp", "add", "-s", "user", "agent-desktop", "--transport", "stdio", "--", "agent-desktop", "mcp"]);
 });

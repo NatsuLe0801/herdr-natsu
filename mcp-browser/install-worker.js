@@ -8,16 +8,13 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const browserDir = path.join(root, "mcp-browser");
 const mcpDir = path.join(root, "mcp");
 const shimRunner = path.join(browserDir, "run-command.ps1");
-const cuaDriverBin = process.platform === "win32"
-  ? path.join(homedir(), "AppData", "Local", "Programs", "Cua", "cua-driver", "bin", "cua-driver.exe")
-  : "cua-driver";
 const statusDir = process.env.HERDR_INSTALL_STATUS_DIR
   ?? path.join(homedir(), ".config", "herdr-app", ".install-status");
 
 function plans() {
   const register = {
     mcp: { id: "register", cmd: "claude", args: ["mcp", "add", "-s", "user", "natsu-hc", "--", "node", path.join(mcpDir, "server.js")] },
-    "computer-use": { id: "register", cmd: "claude", args: ["mcp", "add", "-s", "user", "cua-driver", "--transport", "stdio", "--", cuaDriverBin, "mcp"] },
+    "computer-use": { id: "register", cmd: "claude", args: ["mcp", "add", "-s", "user", "agent-desktop", "--transport", "stdio", "--", "agent-desktop", "mcp"] },
     browser: { id: "register", cmd: "claude", args: ["mcp", "add", "-s", "user", "natsu-browser", "--", "node", path.join(browserDir, "server.js")] },
   };
   return {
@@ -26,11 +23,7 @@ function plans() {
       register: register.mcp,
     },
     "computer-use": {
-      "cua-driver": {
-        id: "cua-driver",
-        cmd: "powershell.exe",
-        args: ["-NoProfile", "-Command", "$env:CUA_DRIVER_RS_TELEMETRY_ENABLED='0'; & ([scriptblock]::Create((Invoke-RestMethod 'https://cua.ai/driver/install.ps1'))) -NoAutoStart"],
-      },
+      "agent-desktop": { id: "agent-desktop", cmd: "npm", args: ["install", "-g", "agent-desktop"] },
       register: register["computer-use"],
     },
     browser: {

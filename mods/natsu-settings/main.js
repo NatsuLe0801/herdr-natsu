@@ -11,7 +11,6 @@ const BROWSER_REPO_REL = "mods/herdr-natsu/mcp-browser";
 const BROWSER_DIR = `${home()}/.config/herdr-app/${BROWSER_REPO_REL}`;
 const INSTALLER = `${BROWSER_DIR}/install-worker.js`;
 const INSTALL_STATUS_REL = ".config/herdr-app/.install-status";
-const CUA_DRIVER_BIN = `${home()}/AppData/Local/Programs/Cua/cua-driver/bin/cua-driver.exe`;
 
 const CHECK_TIMEOUT_MS = 3500;
 const INSTALL_TIMEOUT_MS = 10 * 60 * 1000;
@@ -46,16 +45,16 @@ const SECTIONS = [
   {
     id: "computer-use", label: "Computer Use", icon: "terminal",
     title: "Computer Use",
-    subtitle: "cua-driver — native desktop control (clicks, typing, window state) via Windows UIA",
-    serverName: "cua-driver",
-    checks: [{ key: "cuaDriver", label: "cua-driver installed", get bin() { return appWindow()?.platform === "windows" ? CUA_DRIVER_BIN : "cua-driver"; }, args: ["--version"] }],
+    subtitle: "agent-desktop — snapshot/click/type desktop control via OS accessibility APIs",
+    serverName: "agent-desktop",
+    checks: [{ key: "agentDesktop", label: "agent-desktop installed", get bin() { return appWindow()?.platform === "windows" ? "agent-desktop.cmd" : "agent-desktop"; }, args: ["--version"] }],
     depsCheck: null,
     installSteps: [
-      { when: "cuaDriver", expected: false, id: "cua-driver" },
+      { when: "agentDesktop", expected: false, id: "agent-desktop" },
       { when: "registered", expected: false, id: "register" },
     ],
     prepRepairsChecks: true,
-    pathLabel: "cua-driver mcp", // not a file path (no local server.js here) — the actual registered command
+    pathLabel: "agent-desktop mcp", // not a file path (no local server.js here) — the actual registered command
   },
   {
     id: "browser", label: "Browser", icon: "monitor",
