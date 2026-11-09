@@ -36,7 +36,7 @@ cp -f "$REPO_DIR/layouts/natsu.json" "$HERDR_HOME/layouts/natsu.json"
 touch "$HERDR_HOME/keys.json"
 node -e '
 const fs = require("fs");
-const [, , dest, src] = process.argv;
+const [, dest, src] = process.argv;
 let destJson = {};
 try { destJson = JSON.parse(fs.readFileSync(dest, "utf8")); } catch {}
 const srcJson = JSON.parse(fs.readFileSync(src, "utf8"));
